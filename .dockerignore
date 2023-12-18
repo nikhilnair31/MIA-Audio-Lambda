@@ -1,0 +1,12 @@
+Dockerfile
+README.md
+.env
+env
+env/
+nv/
+*.pyc
+*.pyo
+*.pyd
+__pycache__
+.pytest_cache
+events
