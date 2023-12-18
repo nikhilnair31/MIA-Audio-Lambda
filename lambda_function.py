@@ -1,6 +1,9 @@
 import os
+import io
 import json
+import uuid
 import boto3
+import base64
 import logging
 import pinecone
 from openai import OpenAI
@@ -60,11 +63,18 @@ facts_system_prompt = f"""
     Content: 
 """
 
-def start_processing(file_content):
-    raw_transcript = whisper(whisper_prompt, file_content)
-    clean_transcript = gpt("gpt-3.5-turbo", clean_system_prompt, raw_transcript)
-    factual_transcript = gpt("gpt-4-1106-preview", facts_system_prompt, clean_transcript)
-    pinecone(factual_transcript)
+def start_processing(event):
+    bucket_name = event['Records'][0]['s3']['bucket']['name']
+    object_key = event['Records'][0]['s3']['object']['key']
+    
+    download_path = '/tmp/{}'.format(object_key)
+    s3.download_file(bucket_name, object_key, download_path)
+    
+    with open(download_path, 'rb') as file_obj:
+        raw_transcript = whisper(whisper_prompt, file_obj)
+        clean_transcript = gpt("gpt-3.5-turbo", clean_system_prompt, raw_transcript)
+        factual_transcript = gpt("gpt-4-1106-preview", facts_system_prompt, clean_transcript)
+        pinecone(factual_transcript)
 def whisper(system_prompt, file_content):
     response = openai_client.audio.transcriptions.create(
         model = "whisper-1", 
@@ -94,29 +104,26 @@ def gpt(modelName, system_prompt, user_text):
     return assitant_text
 def pinecone(text):
     vectorstore.add_texts(text)
-    
+
     print("Upserted into Pinecone successfully!\n")
     logger.info(f"Upserted into Pinecone successfully!\n")
 
-def lambda_handler(event, context):
+def handler(event, context):
     try:
         logger.info(f'started lambda_handler\n\n')
 
         # Running on AWS Lambda
         if context:
-            bucket_name = event['Records'][0]['s3']['bucket']['name']
-            object_key = event['Records'][0]['s3']['object']['key']
-
-            file_obj = s3.get_object(Bucket=bucket_name, Key=object_key)
-            file_content = file_obj['Body'].read()
-
-            start_processing(file_content)
-        # Running locally
+            start_processing(event)
+        # FIXME: Running locally (NEEDS TO BE UPDATED BEFORE RUNNING)
         else:
             local_file_path = r'.\Data\recording_206419037.m4a'
             file_content = open(local_file_path, "rb")
 
-            start_processing(file_content)
+            download_path = '/tmp/{}{}'.format(uuid.uuid4(), object_key)
+            s3.download_file(bucket_name, object_key, download_path)
+
+            start_processing(download_path)
         return {
             'statusCode': 200,
             'body': json.dumps('Processing complete')
