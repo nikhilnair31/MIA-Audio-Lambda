@@ -7,9 +7,9 @@ import base64
 import logging
 import pinecone
 from openai import OpenAI
-from langchain.vectorstores import Pinecone
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.embeddings.openai import OpenAIEmbeddings
+# from langchain.vectorstores import Pinecone
+# from langchain.embeddings import OpenAIEmbeddings
+# from langchain.embeddings.openai import OpenAIEmbeddings
 
 # API keys
 openai_api_key = os.environ.get('OPENAI_API_KEY')
@@ -28,10 +28,10 @@ s3 = boto3.client('s3')
 openai_client = OpenAI(api_key=openai_api_key)
 
 # Initialize the Pinecone client
-embeddings_model = OpenAIEmbeddings(openai_api_key=openai_api_key)
+# embeddings_model = OpenAIEmbeddings(openai_api_key=openai_api_key)
 pinecone.init(api_key=pinecone_api_key, environment=pinecone_env_key)
 index = pinecone.Index(pinecone_index_name)
-vectorstore = Pinecone(index, embeddings_model, "text")
+# vectorstore = Pinecone(index, embeddings_model, "text")
 
 # System Prompts
 whisper_prompt = f"""
@@ -103,7 +103,7 @@ def gpt(modelName, system_prompt, user_text):
 
     return assitant_text
 def pinecone(text):
-    vectorstore.add_texts(text)
+    vectorstore.add_texts(text, async_req=False, pool_threads=1)
 
     print("Upserted into Pinecone successfully!\n")
     logger.info(f"Upserted into Pinecone successfully!\n")
@@ -130,14 +130,14 @@ def handler(event, context):
         }
 
     except Exception as e: 
-        logger.error(f'logging f max: \n{e}\n\n')
+        logger.error(f'Error: \n{e}\n\n')
+        logger.error("Stack Trace:", exc_info=True)
         
         return {
             'statusCode': 400,
-            'body': f'Fail! {e}'
+            'body': f'Error! {e}'
         }
 
-# Emulate an S3 upload event
 if __name__ == '__main__':
     # Dummy context
     test_context = None

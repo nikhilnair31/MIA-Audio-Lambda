@@ -26,6 +26,7 @@ vectorstore = Pinecone(index, embed, "text")
 # query_text = str(input("Search Pinecone...\n"))
 query_text = "elon musk"
 query_results = vectorstore.similarity_search(query_text, k=3)
+print(f'query_results\n{query_results}')
 
 # Iterate through search matches and retrieve documents
 for document in query_results:
