@@ -7,31 +7,24 @@ import base64
 import logging
 import pinecone
 from openai import OpenAI
-# from langchain.vectorstores import Pinecone
-# from langchain.embeddings import OpenAIEmbeddings
-# from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain.embeddings import OpenAIEmbeddings
 
 # API keys
 openai_api_key = os.environ.get('OPENAI_API_KEY')
+openai_client = OpenAI(api_key=openai_api_key)
+embeddings_model = OpenAIEmbeddings(openai_api_key=openai_api_key)
+
 pinecone_api_key = os.environ.get('PINECONE_API_KEY')
 pinecone_env_key = os.environ.get('PINECONE_ENV_KEY')
 pinecone_index_name = os.environ.get('PINECONE_INDEX_NAME')
-
-# Initialize the logger
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-
-# Initialize the S3 client
-s3 = boto3.client('s3')
-
-# Initialize the OpenAI client
-openai_client = OpenAI(api_key=openai_api_key)
-
-# Initialize the Pinecone client
-# embeddings_model = OpenAIEmbeddings(openai_api_key=openai_api_key)
 pinecone.init(api_key=pinecone_api_key, environment=pinecone_env_key)
 index = pinecone.Index(pinecone_index_name)
-# vectorstore = Pinecone(index, embeddings_model, "text")
+
+# Initialize
+s3 = boto3.client('s3')
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 # System Prompts
 whisper_prompt = f"""
@@ -66,6 +59,8 @@ facts_system_prompt = f"""
 def start_processing(event):
     bucket_name = event['Records'][0]['s3']['bucket']['name']
     object_key = event['Records'][0]['s3']['object']['key']
+    print(f"Event: {bucket_name} - {object_key}\n")
+    logger.info(f"Event: {bucket_name} - {object_key}\n")
     
     download_path = '/tmp/{}'.format(object_key)
     s3.download_file(bucket_name, object_key, download_path)
@@ -74,7 +69,7 @@ def start_processing(event):
         raw_transcript = whisper(whisper_prompt, file_obj)
         clean_transcript = gpt("gpt-3.5-turbo", clean_system_prompt, raw_transcript)
         factual_transcript = gpt("gpt-4-1106-preview", facts_system_prompt, clean_transcript)
-        pinecone(factual_transcript)
+        vector(factual_transcript, object_key)
 def whisper(system_prompt, file_content):
     response = openai_client.audio.transcriptions.create(
         model = "whisper-1", 
@@ -102,11 +97,22 @@ def gpt(modelName, system_prompt, user_text):
     logger.info(f"GPT API Response: {assitant_text}\n")
 
     return assitant_text
-def pinecone(text):
-    vectorstore.add_texts(text, async_req=False, pool_threads=1)
+def vector(text, object_key):
+    # Initialize the Pinecone client
+    embedding = embeddings_model.embed_documents([text])
+    
+    index.upsert([
+        (
+            uuid.uuid4(),
+            embedding[0],
+            {
+                "text": f'{text}', 
+                "source": "recording"
+            }),
+    ])
 
-    print("Upserted into Pinecone successfully!\n")
-    logger.info(f"Upserted into Pinecone successfully!\n")
+    print("Upserted into DB successfully!\n")
+    logger.info(f"Upserted into DB successfully!\n")
 
 def handler(event, context):
     try:
@@ -115,15 +121,16 @@ def handler(event, context):
         # Running on AWS Lambda
         if context:
             start_processing(event)
-        # FIXME: Running locally (NEEDS TO BE UPDATED BEFORE RUNNING)
+        # Running locally
         else:
-            local_file_path = r'.\Data\recording_206419037.m4a'
-            file_content = open(local_file_path, "rb")
+            local_file_path = r'.\Data\recordings\recording_206419037.m4a'
+            object_key = r'recordings\recording_206419037.m4a'
 
-            download_path = '/tmp/{}{}'.format(uuid.uuid4(), object_key)
-            s3.download_file(bucket_name, object_key, download_path)
-
-            start_processing(download_path)
+            with open(local_file_path, 'rb') as file_obj:
+                raw_transcript = whisper(whisper_prompt, file_obj)
+                clean_transcript = gpt("gpt-3.5-turbo", clean_system_prompt, raw_transcript)
+                factual_transcript = gpt("gpt-4-1106-preview", facts_system_prompt, clean_transcript)
+                vector(factual_transcript, object_key)
         return {
             'statusCode': 200,
             'body': json.dumps('Processing complete')
@@ -152,5 +159,5 @@ if __name__ == '__main__':
     }
 
     # Call the lambda handler
-    response = lambda_handler(test_event, test_context)
+    response = handler(test_event, test_context)
     print(response)
