@@ -59,17 +59,18 @@ facts_system_prompt = f"""
 def start_processing(event):
     bucket_name = event['Records'][0]['s3']['bucket']['name']
     object_key = event['Records'][0]['s3']['object']['key']
-    print(f"Event: {bucket_name} - {object_key}\n")
     logger.info(f"Event: {bucket_name} - {object_key}\n")
     
-    download_path = '/tmp/{}'.format(object_key)
+    filename = object_key.split("/")[-1]
+    download_path = os.path.join('/tmp', filename)
+    logger.info(f"filename: {filename} - download_path: {download_path}\n")
     s3.download_file(bucket_name, object_key, download_path)
     
     with open(download_path, 'rb') as file_obj:
         raw_transcript = whisper(whisper_prompt, file_obj)
         clean_transcript = gpt("gpt-3.5-turbo", clean_system_prompt, raw_transcript)
         factual_transcript = gpt("gpt-4-1106-preview", facts_system_prompt, clean_transcript)
-        vector(factual_transcript, object_key)
+        vector(factual_transcript)
 def whisper(system_prompt, file_content):
     response = openai_client.audio.transcriptions.create(
         model = "whisper-1", 
@@ -97,13 +98,13 @@ def gpt(modelName, system_prompt, user_text):
     logger.info(f"GPT API Response: {assitant_text}\n")
 
     return assitant_text
-def vector(text, object_key):
+def vector(text):
     # Initialize the Pinecone client
     embedding = embeddings_model.embed_documents([text])
     
     index.upsert([
         (
-            uuid.uuid4(),
+            str(uuid.uuid4()),  # Convert UUID to string
             embedding[0],
             {
                 "text": f'{text}', 
