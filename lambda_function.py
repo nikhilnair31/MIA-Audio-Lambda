@@ -57,20 +57,29 @@ facts_system_prompt = f"""
 """
 
 def start_processing(event):
+    # Get bucket name and object key from the event
     bucket_name = event['Records'][0]['s3']['bucket']['name']
     object_key = event['Records'][0]['s3']['object']['key']
     logger.info(f"Event: {bucket_name} - {object_key}\n")
     
+    # Get the filename and download path
     filename = object_key.split("/")[-1]
     download_path = os.path.join('/tmp', filename)
     logger.info(f"filename: {filename} - download_path: {download_path}\n")
+    
+    # Download the file from S3
     s3.download_file(bucket_name, object_key, download_path)
+    
+    # Retrieve metadata for the object
+    response = s3.head_object(Bucket=bucket_name, Key=object_key)
+    metadata = response.get('Metadata', {})
+    logger.info(f"Metadata: {metadata}\n")
     
     with open(download_path, 'rb') as file_obj:
         raw_transcript = whisper(whisper_prompt, file_obj)
         clean_transcript = gpt("gpt-3.5-turbo", clean_system_prompt, raw_transcript)
         factual_transcript = gpt("gpt-4-1106-preview", facts_system_prompt, clean_transcript)
-        vector(factual_transcript)
+        vector(factual_transcript, metadata)
 def whisper(system_prompt, file_content):
     response = openai_client.audio.transcriptions.create(
         model = "whisper-1", 
@@ -98,18 +107,25 @@ def gpt(modelName, system_prompt, user_text):
     logger.info(f"GPT API Response: {assitant_text}\n")
 
     return assitant_text
-def vector(text):
+def vector(text, metadata):
     # Initialize the Pinecone client
     embedding = embeddings_model.embed_documents([text])
+
+    # Create a document for upsertion with metadata
+    document = {
+        "text": text,
+        "source": "recording"
+    }
+
+    # Merge the metadata into the document dictionary
+    document.update(metadata)
     
     index.upsert([
         (
             str(uuid.uuid4()),  # Convert UUID to string
             embedding[0],
-            {
-                "text": f'{text}', 
-                "source": "recording"
-            }),
+            document
+        ),
     ])
 
     print("Upserted into DB successfully!\n")
