@@ -117,6 +117,17 @@ def vector(text, metadata):
         "source": "recording"
     }
 
+    # Convert specific metadata keys to the appropriate types
+    if 'address' in metadata:
+        metadata['address'] = str(metadata['address'])
+    if 'currenttimeformattedstring' in metadata:
+        metadata['currenttimeformattedstring'] = datetime.strptime(metadata['currenttimeformattedstring'], '%Y-%m-%d %H:%M:%S')
+    if 'longitude' in metadata:
+        metadata['longitude'] = float(metadata['longitude'])
+    if 'latitude' in metadata:
+        metadata['latitude'] = float(metadata['latitude'])
+
+
     # Merge the metadata into the document dictionary
     document.update(metadata)
     
