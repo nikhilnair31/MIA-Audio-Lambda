@@ -6,6 +6,7 @@ import boto3
 import base64
 import logging
 import pinecone
+from datetime import datetime
 from openai import OpenAI
 from langchain.embeddings import OpenAIEmbeddings
 
@@ -121,7 +122,7 @@ def vector(text, metadata):
     if 'address' in metadata:
         metadata['address'] = str(metadata['address'])
     if 'currenttimeformattedstring' in metadata:
-        metadata['currenttimeformattedstring'] = datetime.strptime(metadata['currenttimeformattedstring'], '%Y-%m-%d %H:%M:%S')
+        metadata['currenttimeformattedstring'] = datetime.strptime(metadata['currenttimeformattedstring'], '%a %d/%m/%y %H:%M')
     if 'longitude' in metadata:
         metadata['longitude'] = float(metadata['longitude'])
     if 'latitude' in metadata:
