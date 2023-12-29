@@ -56,6 +56,23 @@ facts_system_prompt = f"""
     - Print repetitive content
     Content: 
 """
+upsert_check_system_prompt = f"""
+    You are to determine if the text content provided is to be upserted into the database or not.
+    If the text contains no factual information then return "N" else "Y".
+    
+    Examples:
+    Example #1:
+    Input: No factual information can be extracted from this statement, as it is a personal opinion or intention without any specific factual content.
+    Output: N
+    Example #2:
+    Input: No factual information to extract.
+    Output: N
+    Example #3:
+    Input: - The speaker went to the store to buy fruit and vegetables. - The speaker went to the park to have a picnic
+    Output: Y
+    
+    Content: 
+"""
 
 def start_processing(event):
     # Get bucket name and object key from the event
@@ -159,7 +176,10 @@ def handler(event, context):
                 raw_transcript = whisper(whisper_prompt, file_obj)
                 clean_transcript = gpt("gpt-3.5-turbo", clean_system_prompt, raw_transcript)
                 factual_transcript = gpt("gpt-4-1106-preview", facts_system_prompt, clean_transcript)
-                vector(factual_transcript, object_key)
+                check_to_upsert = gpt("gpt-4-1106-preview", upsert_check_system_prompt, factual_transcript)
+                
+                if(check_to_upsert == 'Y'):
+                    vector(factual_transcript, object_key)
         return {
             'statusCode': 200,
             'body': json.dumps('Processing complete')
