@@ -10,6 +10,12 @@ from datetime import datetime
 from openai import OpenAI
 from langchain.embeddings import OpenAIEmbeddings
 
+# Initialize
+s3 = boto3.client('s3')
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
 # API keys
 openai_api_key = os.environ.get('OPENAI_API_KEY')
 openai_client = OpenAI(api_key=openai_api_key)
@@ -21,58 +27,11 @@ pinecone_index_name = os.environ.get('PINECONE_INDEX_NAME')
 pinecone.init(api_key=pinecone_api_key, environment=pinecone_env_key)
 index = pinecone.Index(pinecone_index_name)
 
-# Initialize
-s3 = boto3.client('s3')
-
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-
 # System Prompts
-whisper_prompt = f"""
-    don't translate or make up words to fill in the rest of the sentence. if background noise return .
-"""
-clean_system_prompt = f"""
-    You will receive a user's transcribed speech and are to process it to correct potential errors. 
-    DO NOT DO THE FOLLOWING:
-    - Generate any additional content 
-    - Censor any of the content
-    - Print repetitive content
-    DO THE FOLLOWING:
-    - Account for transcript include speech of multiple users
-    - Only output corrected text 
-    - If too much of the content seems erronous return '.' 
-    Transcription: 
-"""
-facts_system_prompt = f"""
-    You will receive transcribed speech from the environment and are to extract relevant facts from it. 
-    DO THE FOLLOWING:
-    - Extract statements about factual information from the content
-    - Account for transcript to be from various sources like the user, surrrounding people, music or video playing in vicinity etc.
-    - Only output factual information
-    DO NOT DO THE FOLLOWING:
-    - Generate bullet points
-    - Generate any additional content
-    - Censor any of the content
-    - Print repetitive content
-    Content: 
-"""
-upsert_check_system_prompt = f"""
-    You are to determine if the text content provided is to be upserted into the database or not.
-    If the text contains no factual information then return "N" else "Y".
-    
-    Examples:
-    Example #1:
-    Input: No factual information can be extracted from this statement, as it is a personal opinion or intention without any specific factual content.
-    Output: N
-    Example #2:
-    Input: No factual information to extract.
-    Output: N
-    Example #3:
-    Input: - The speaker went to the store to buy fruit and vegetables. - The speaker went to the park to have a picnic
-    Output: Y
-    
-    Content: 
-"""
+whisper_prompt = str(os.environ.get('WHISPER_PROMPT'))
+clean_system_prompt = str(os.environ.get('CLEAN_SYSTEM_PROMPT'))
+facts_system_prompt = str(os.environ.get('FACTS_SYSTEM_PROMPT'))
+upsert_check_system_prompt = str(os.environ.get('UPSERT_CHECK_SYSTEM_PROMPT'))
 
 def start_processing(event):
     # Get bucket name and object key from the event
@@ -96,8 +55,8 @@ def start_processing(event):
     with open(download_path, 'rb') as file_obj:
         raw_transcript = whisper(whisper_prompt, file_obj)
         clean_transcript = gpt("gpt-3.5-turbo", clean_system_prompt, raw_transcript)
-        factual_transcript = gpt("gpt-4-1106-preview", facts_system_prompt, clean_transcript)
-        vector(factual_transcript, metadata)
+        # factual_transcript = gpt("gpt-4-1106-preview", facts_system_prompt, clean_transcript)
+        vector(clean_transcript, metadata)
 def whisper(system_prompt, file_content):
     response = openai_client.audio.transcriptions.create(
         model = "whisper-1", 
@@ -174,9 +133,9 @@ def handler(event, context):
 
             with open(local_file_path, 'rb') as file_obj:
                 raw_transcript = whisper(whisper_prompt, file_obj)
-                clean_transcript = gpt("gpt-3.5-turbo", clean_system_prompt, raw_transcript)
-                factual_transcript = gpt("gpt-4-1106-preview", facts_system_prompt, clean_transcript)
-                check_to_upsert = gpt("gpt-4-1106-preview", upsert_check_system_prompt, factual_transcript)
+                # clean_transcript = gpt("gpt-3.5-turbo", clean_system_prompt, raw_transcript)
+                # factual_transcript = gpt("gpt-4-1106-preview", facts_system_prompt, clean_transcript)
+                check_to_upsert = gpt("gpt-4-1106-preview", upsert_check_system_prompt, raw_transcript)
                 
                 if(check_to_upsert == 'Y'):
                     vector(factual_transcript, object_key)
