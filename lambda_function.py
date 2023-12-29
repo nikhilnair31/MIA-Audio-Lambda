@@ -56,6 +56,9 @@ def start_processing(event):
         raw_transcript = whisper(whisper_prompt, file_obj)
         clean_transcript = gpt("gpt-3.5-turbo", clean_system_prompt, raw_transcript)
         # factual_transcript = gpt("gpt-4-1106-preview", facts_system_prompt, clean_transcript)
+        # check_to_upsert = gpt("gpt-4-1106-preview", upsert_check_system_prompt, clean_transcript)
+                
+        # if(check_to_upsert == 'Y'):
         vector(clean_transcript, metadata)
 def whisper(system_prompt, file_content):
     response = openai_client.audio.transcriptions.create(
@@ -66,7 +69,6 @@ def whisper(system_prompt, file_content):
     )
     transcript_text = response.text
 
-    print(f'transcript_text: {transcript_text}\n')
     logger.info(f"Whisper API Response: {transcript_text}\n")
 
     return transcript_text
@@ -80,7 +82,6 @@ def gpt(modelName, system_prompt, user_text):
     )
     assitant_text = response.choices[0].message.content
 
-    print(f'assitant_text: {assitant_text}\n')
     logger.info(f"GPT API Response: {assitant_text}\n")
 
     return assitant_text
@@ -116,7 +117,6 @@ def vector(text, metadata):
         ),
     ])
 
-    print("Upserted into DB successfully!\n")
     logger.info(f"Upserted into DB successfully!\n")
 
 def handler(event, context):
@@ -133,12 +133,12 @@ def handler(event, context):
 
             with open(local_file_path, 'rb') as file_obj:
                 raw_transcript = whisper(whisper_prompt, file_obj)
-                # clean_transcript = gpt("gpt-3.5-turbo", clean_system_prompt, raw_transcript)
+                clean_transcript = gpt("gpt-3.5-turbo", clean_system_prompt, raw_transcript)
                 # factual_transcript = gpt("gpt-4-1106-preview", facts_system_prompt, clean_transcript)
-                check_to_upsert = gpt("gpt-4-1106-preview", upsert_check_system_prompt, raw_transcript)
+                # check_to_upsert = gpt("gpt-4-1106-preview", upsert_check_system_prompt, raw_transcript)
                 
-                if(check_to_upsert == 'Y'):
-                    vector(factual_transcript, object_key)
+                # if(check_to_upsert == 'Y'):
+                vector(clean_transcript, object_key)
         return {
             'statusCode': 200,
             'body': json.dumps('Processing complete')
