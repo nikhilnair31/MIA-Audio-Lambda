@@ -88,12 +88,10 @@ def start_processing(event):
     
     with open(download_path, 'rb') as file_obj:
         raw_transcript = whisper(whisper_prompt, file_obj)
-        clean_transcript = gpt("gpt-3.5-turbo", clean_system_prompt, raw_transcript)
-        # factual_transcript = gpt("gpt-4-1106-preview", facts_system_prompt, clean_transcript)
-        # check_to_upsert = gpt("gpt-4-1106-preview", upsert_check_system_prompt, clean_transcript)
-                
-        # if(check_to_upsert == 'Y'):
-        vector(clean_transcript, metadata)
+        clean_transcript = gpt("gpt-4-1106-preview", clean_system_prompt, raw_transcript)
+   
+        if(check_to_upsert != '.'):
+            vector(clean_transcript, metadata)
 def whisper(system_prompt, file_content):
     response = openai_client.audio.transcriptions.create(
         model = "whisper-1", 
@@ -147,12 +145,12 @@ def handler(event, context):
 
             with open(local_file_path, 'rb') as file_obj:
                 raw_transcript = whisper(whisper_prompt, file_obj)
-                clean_transcript = gpt("gpt-3.5-turbo", clean_system_prompt, raw_transcript)
+                clean_transcript = gpt("gpt-4-1106-preview", clean_system_prompt, raw_transcript)
                 # factual_transcript = gpt("gpt-4-1106-preview", facts_system_prompt, clean_transcript)
                 # check_to_upsert = gpt("gpt-4-1106-preview", upsert_check_system_prompt, raw_transcript)
                 
-                # if(check_to_upsert == 'Y'):
-                vector(clean_transcript, object_key)
+                if(check_to_upsert != '.'):
+                    vector(clean_transcript, object_key)
         return {
             'statusCode': 200,
             'body': json.dumps('Processing complete')
