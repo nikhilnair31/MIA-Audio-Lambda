@@ -33,6 +33,40 @@ clean_system_prompt = str(os.environ.get('CLEAN_SYSTEM_PROMPT'))
 facts_system_prompt = str(os.environ.get('FACTS_SYSTEM_PROMPT'))
 upsert_check_system_prompt = str(os.environ.get('UPSERT_CHECK_SYSTEM_PROMPT'))
 
+def update_metadata_type(metadata, text):
+    document = metadata
+
+    document['text'] = str(text)
+    document['source'] = str("recording")
+
+    if 'currenttimeformattedstring' in metadata:
+        document['currenttimeformattedstring'] = str(datetime.strptime(metadata['currenttimeformattedstring'], '%a %d/%m/%y %H:%M'))
+    if 'systemtime' in metadata:
+        document['systemtime'] = int(metadata['systemtime'])
+
+    if 'address' in metadata:
+        document['address'] = str(metadata['address'])
+    if 'longitude' in metadata:
+        document['longitude'] = float(metadata['longitude'])
+    if 'latitude' in metadata:
+        document['latitude'] = float(metadata['latitude'])
+
+    if 'batterylevel' in metadata:
+        document['batterylevel'] = int(metadata['batterylevel'])
+
+    if 'firstweatherdescription' in metadata:
+        document['firstweatherdescription'] = str(metadata['firstweatherdescription'])
+    if 'cloudall' in metadata:
+        document['cloudall'] = int(metadata['cloudall'])
+    if 'feelslike' in metadata:
+        document['feelslike'] = float(metadata['feelslike'])
+    if 'humidity' in metadata:
+        document['humidity'] = int(metadata['humidity'])
+    if 'windspeed' in metadata:
+        document['windspeed'] = float(metadata['windspeed'])
+
+    return document
+
 def start_processing(event):
     # Get bucket name and object key from the event
     bucket_name = event['Records'][0]['s3']['bucket']['name']
@@ -88,32 +122,12 @@ def gpt(modelName, system_prompt, user_text):
 def vector(text, metadata):
     # Initialize the Pinecone client
     embedding = embeddings_model.embed_documents([text])
-
-    # Create a document for upsertion with metadata
-    document = {
-        "text": text,
-        "source": "recording"
-    }
-
-    # Convert specific metadata keys to the appropriate types
-    if 'address' in metadata:
-        metadata['address'] = str(metadata['address'])
-    if 'currenttimeformattedstring' in metadata:
-        metadata['currenttimeformattedstring'] = datetime.strptime(metadata['currenttimeformattedstring'], '%a %d/%m/%y %H:%M')
-    if 'longitude' in metadata:
-        metadata['longitude'] = float(metadata['longitude'])
-    if 'latitude' in metadata:
-        metadata['latitude'] = float(metadata['latitude'])
-
-
-    # Merge the metadata into the document dictionary
-    document.update(metadata)
-    
+    updated_metadata = update_metadata_type(metadata, text)
     index.upsert([
         (
             str(uuid.uuid4()),  # Convert UUID to string
             embedding[0],
-            document
+            updated_metadata
         ),
     ])
 
