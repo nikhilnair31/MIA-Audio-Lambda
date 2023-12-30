@@ -32,6 +32,7 @@ whisper_prompt = str(os.environ.get('WHISPER_PROMPT'))
 clean_system_prompt = str(os.environ.get('CLEAN_SYSTEM_PROMPT'))
 facts_system_prompt = str(os.environ.get('FACTS_SYSTEM_PROMPT'))
 upsert_check_system_prompt = str(os.environ.get('UPSERT_CHECK_SYSTEM_PROMPT'))
+speaker_label_system_prompt = str(os.environ.get('SPEAKER_LABEL_SYSTEM_PROMPT'))
 
 def update_metadata_type(metadata, text):
     document = metadata
@@ -89,9 +90,15 @@ def start_processing(event):
     with open(download_path, 'rb') as file_obj:
         raw_transcript = whisper(whisper_prompt, file_obj)
         clean_transcript = gpt("gpt-4-1106-preview", clean_system_prompt, raw_transcript)
+        speaker_label_transcript = gpt("gpt-4-1106-preview", speaker_label_system_prompt, clean_transcript)
    
-        if(check_to_upsert != '.'):
-            vector(clean_transcript, metadata)
+        if(speaker_label_transcript != '.'):
+            vector(speaker_label_transcript, metadata)
+    
+    # Delete the S3 object after processing is complete
+    s3.delete_object(Bucket=bucket_name, Key=object_key)
+    logger.info(f"Deleted S3 object: {bucket_name}/{object_key}")
+    
 def whisper(system_prompt, file_content):
     response = openai_client.audio.transcriptions.create(
         model = "whisper-1", 
@@ -146,11 +153,10 @@ def handler(event, context):
             with open(local_file_path, 'rb') as file_obj:
                 raw_transcript = whisper(whisper_prompt, file_obj)
                 clean_transcript = gpt("gpt-4-1106-preview", clean_system_prompt, raw_transcript)
-                # factual_transcript = gpt("gpt-4-1106-preview", facts_system_prompt, clean_transcript)
-                # check_to_upsert = gpt("gpt-4-1106-preview", upsert_check_system_prompt, raw_transcript)
-                
-                if(check_to_upsert != '.'):
-                    vector(clean_transcript, object_key)
+                speaker_label_transcript = gpt("gpt-4-1106-preview", speaker_label_system_prompt, clean_transcript)
+        
+                if(speaker_label_transcript != '.'):
+                    vector(speaker_label_transcript, metadata)
         return {
             'statusCode': 200,
             'body': json.dumps('Processing complete')
