@@ -42,7 +42,7 @@ def update_metadata_type(metadata, text):
 
     document['text'] = str(text)
     if 'source' in metadata:
-        document['source'] = str("source")
+        document['source'] = str(metadata['source'])
     
     if 'systemTime' in metadata:
         document['systemTime'] = int(metadata['systemTime'])

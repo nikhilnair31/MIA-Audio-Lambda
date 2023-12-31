@@ -34,6 +34,8 @@ docker push 832214191436.dkr.ecr.ap-south-1.amazonaws.com/mia-lambda:latest
 # List images in the repository to confirm the push
 aws ecr list-images --repository-name mia-lambda --region ap-south-1
 
+# TODO: Need to update this
+
 # Define Lambda function name
 $lambdaFunctionName = "mia-audio"
 
