@@ -24,7 +24,7 @@ function Check-ECRRepositoryExists {
 }
 
 # Login to AWS ECR if not logged in
-if (-not (Check-DockerLogin)) {
+if (Check-DockerLogin) {
     aws ecr get-login-password | docker login --username AWS --password-stdin 832214191436.dkr.ecr.ap-south-1.amazonaws.com
 }
 
