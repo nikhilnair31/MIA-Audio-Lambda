@@ -16,6 +16,9 @@ s3 = boto3.client('s3')
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+# General
+delete_s3_obj = os.environ.get('DELETE_S3_OBJ', 'False').lower() == 'true'
+
 # API keys
 openai_api_key = os.environ.get('OPENAI_API_KEY')
 openai_client = OpenAI(api_key=openai_api_key)
@@ -39,11 +42,21 @@ def update_metadata_type(metadata, text):
 
     document['text'] = str(text)
     document['source'] = str("recording")
-
+    
+    if 'systemTime' in metadata:
+        document['systemTime'] = int(metadata['systemTime'])
     if 'currenttimeformattedstring' in metadata:
         document['currenttimeformattedstring'] = str(datetime.strptime(metadata['currenttimeformattedstring'], '%a %d/%m/%y %H:%M'))
-    if 'systemtime' in metadata:
-        document['systemtime'] = int(metadata['systemtime'])
+    if 'day' in metadata:
+        document['month'] = int(metadata['day'])
+    if 'day' in metadata:
+        document['month'] = int(metadata['month'])
+    if 'year' in metadata:
+        document['year'] = int(metadata['year'])
+    if 'hours' in metadata:
+        document['hours'] = int(metadata['hours'])
+    if 'minutes' in metadata:
+        document['minutes'] = int(metadata['minutes'])
 
     if 'address' in metadata:
         document['address'] = str(metadata['address'])
@@ -96,8 +109,9 @@ def start_processing(event):
             vector(speaker_label_transcript, metadata)
     
     # Delete the S3 object after processing is complete
-    s3.delete_object(Bucket=bucket_name, Key=object_key)
-    logger.info(f"Deleted S3 object: {bucket_name}/{object_key}")
+    if delete_s3_obj:
+        s3.delete_object(Bucket=bucket_name, Key=object_key)
+        logger.info(f"Deleted S3 object: {bucket_name}/{object_key}")
     
 def whisper(system_prompt, file_content):
     response = openai_client.audio.transcriptions.create(
