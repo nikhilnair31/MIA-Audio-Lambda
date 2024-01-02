@@ -49,8 +49,8 @@ def update_metadata_type(metadata, text):
     if 'currenttimeformattedstring' in metadata:
         document['currenttimeformattedstring'] = str(datetime.strptime(metadata['currenttimeformattedstring'], '%a %d/%m/%y %H:%M'))
     if 'day' in metadata:
-        document['month'] = int(metadata['day'])
-    if 'day' in metadata:
+        document['day'] = int(metadata['day'])
+    if 'month' in metadata:
         document['month'] = int(metadata['month'])
     if 'year' in metadata:
         document['year'] = int(metadata['year'])
