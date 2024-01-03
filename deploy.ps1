@@ -17,9 +17,11 @@ function Check-ECRRepositoryExists {
 $name = "mia-audio"
 
 # Login
+"Loggin in..."
 aws ecr get-login-password | docker login --username AWS --password-stdin 832214191436.dkr.ecr.ap-south-1.amazonaws.com
 
 # ECR
+"ECR"
 # Create repository if it does not exist
 if (-not (Check-ECRRepositoryExists $name)) {
     aws ecr create-repository --repository-name $name
@@ -33,6 +35,7 @@ if ($images.imageDetails) {
 }
 
 # Docker
+"Docker"
 # Build Docker image
 docker build -t ${name} .
 # Tag the image with 'latest'. This tag will overwrite any existing 'latest' image in the repository.
@@ -43,6 +46,7 @@ docker push 832214191436.dkr.ecr.ap-south-1.amazonaws.com/${name}:latest
 aws ecr list-images --repository-name ${name} --region ap-south-1
 
 # ECR
+"ECR"
 # Make sure $latestImageDigest is populated
 $images = aws ecr describe-images --repository-name $name --output json | ConvertFrom-Json
 if ($images.imageDetails) {
@@ -59,6 +63,7 @@ if (-not $latestImageDigest) {
 $imageUri = "832214191436.dkr.ecr.ap-south-1.amazonaws.com/${name}@${latestImageDigest}"    
 
 # Lambda
+"Lambda"
 # TODO: Update to also create Lambda if it doesn't exist 
 # Update the Lambda function to use the new image URI
 $lambdaUpdate = aws lambda update-function-code --function-name $name --image-uri $imageUri
