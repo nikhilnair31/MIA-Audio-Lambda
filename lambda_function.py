@@ -96,19 +96,20 @@ def start_processing(event):
 
     # Invoke Lambda B
     response = lam.invoke(
-        FunctionName='audio-cleaning',
+        FunctionName='mia-audio-pre',
         InvocationType='RequestResponse',  # Use 'Event' for asynchronous invocation
         Payload=json.dumps(event),
     )
-    payload_stream = response['Payload'].read()
+    payload_stream = response['Payload']
     payload_content = payload_stream.read()
     payload_json = json.loads(payload_content)
-    cleaned_audio_path = payload_json.get('body', '')
+    cleaned_audio_path = payload_json.get('body', '').replace("\"", "")
     logger.info(f"cleaned_audio_path: {cleaned_audio_path}\n")
     
     # Create a path to download the cleaned audio file
-    filename = cleaned_audio_path.split("/")[-1]
-    download_path = os.path.join('/tmp', filename)
+    filename = cleaned_audio_path.split("/")[-1].strip()
+    updated_filename = filename.replace("\"", "").strip()
+    download_path = os.path.join('/tmp', updated_filename)
     logger.info(f"filename: {filename}\ndownload_path: {download_path}")
     
     # Downloading file
@@ -117,9 +118,6 @@ def start_processing(event):
     # Start processing
     with open(download_path, 'rb') as file_obj:
         raw_transcript = whisper(whisper_prompt, file_obj)
-        raw_transcript_response = json.loads(payload_content)
-        raw_transcript = raw_transcript_response.get('body', '')
-        
         clean_transcript = gpt("gpt-3.5-turbo", clean_system_prompt, raw_transcript)
         speaker_label_transcript = gpt("gpt-4-1106-preview", speaker_label_system_prompt, clean_transcript)
 
