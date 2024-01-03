@@ -12,6 +12,7 @@ from langchain.embeddings import OpenAIEmbeddings
 
 # Initialize
 s3 = boto3.client('s3')
+lam = boto3.client('lambda')
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -88,26 +89,29 @@ def start_processing(event):
     object_key = event['Records'][0]['s3']['object']['key']
     logger.info(f"Event: {bucket_name} - {object_key}\n")
     
-    # Get the filename and download path
-    filename = object_key.split("/")[-1]
-    download_path = os.path.join('/tmp', filename)
-    logger.info(f"filename: {filename} - download_path: {download_path}\n")
-    
-    # Download the file from S3
-    s3.download_file(bucket_name, object_key, download_path)
-    
     # Retrieve metadata for the object
     response = s3.head_object(Bucket=bucket_name, Key=object_key)
     metadata = response.get('Metadata', {})
     logger.info(f"Metadata: {metadata}\n")
+
+    # Invoke Lambda B
+    response = lam.invoke(
+        FunctionName='audio-cleaning',
+        InvocationType='RequestResponse',  # Use 'Event' for asynchronous invocation
+        Payload=json.dumps(event),
+    )
+    payload_stream = response['Payload']
+    payload_content = payload_stream.read()
+    logger.info(f"payload_content: {payload_content}\n")
+
+    raw_transcript_response = json.loads(payload_content)
+    raw_transcript = raw_transcript_response.get('body', '')
     
-    with open(download_path, 'rb') as file_obj:
-        raw_transcript = whisper(whisper_prompt, file_obj)
-        clean_transcript = gpt("gpt-4-1106-preview", clean_system_prompt, raw_transcript)
-        speaker_label_transcript = gpt("gpt-4-1106-preview", speaker_label_system_prompt, clean_transcript)
-   
-        if(speaker_label_transcript != '.'):
-            vector(speaker_label_transcript, metadata)
+    clean_transcript = gpt("gpt-3.5-turbo", clean_system_prompt, raw_transcript)
+    speaker_label_transcript = gpt("gpt-4-1106-preview", speaker_label_system_prompt, clean_transcript)
+
+    if(speaker_label_transcript != '.'):
+        vector(speaker_label_transcript, metadata)
     
     # Delete the S3 object after processing is complete
     if delete_s3_obj:
