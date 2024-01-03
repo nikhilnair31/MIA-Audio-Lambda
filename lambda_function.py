@@ -100,20 +100,33 @@ def start_processing(event):
         InvocationType='RequestResponse',  # Use 'Event' for asynchronous invocation
         Payload=json.dumps(event),
     )
-    payload_stream = response['Payload']
+    payload_stream = response['Payload'].read()
     payload_content = payload_stream.read()
-    logger.info(f"payload_content: {payload_content}\n")
-
-    raw_transcript_response = json.loads(payload_content)
-    raw_transcript = raw_transcript_response.get('body', '')
+    payload_json = json.loads(payload_content)
+    cleaned_audio_path = payload_json.get('body', '')
+    logger.info(f"cleaned_audio_path: {cleaned_audio_path}\n")
     
-    clean_transcript = gpt("gpt-3.5-turbo", clean_system_prompt, raw_transcript)
-    speaker_label_transcript = gpt("gpt-4-1106-preview", speaker_label_system_prompt, clean_transcript)
-
-    if(speaker_label_transcript != '.'):
-        vector(speaker_label_transcript, metadata)
+    # Create a path to download the cleaned audio file
+    filename = cleaned_audio_path.split("/")[-1]
+    download_path = os.path.join('/tmp', filename)
+    logger.info(f"filename: {filename}\ndownload_path: {download_path}")
     
-    # Delete the S3 object after processing is complete
+    # Downloading file
+    s3.download_file(bucket_name, cleaned_audio_path, download_path)
+    
+    # Start processing
+    with open(download_path, 'rb') as file_obj:
+        raw_transcript = whisper(whisper_prompt, file_obj)
+        raw_transcript_response = json.loads(payload_content)
+        raw_transcript = raw_transcript_response.get('body', '')
+        
+        clean_transcript = gpt("gpt-3.5-turbo", clean_system_prompt, raw_transcript)
+        speaker_label_transcript = gpt("gpt-4-1106-preview", speaker_label_system_prompt, clean_transcript)
+
+        if(speaker_label_transcript != '.'):
+            vector(speaker_label_transcript, metadata)
+    
+    # If required delete the S3 object after processing is complete
     if delete_s3_obj:
         s3.delete_object(Bucket=bucket_name, Key=object_key)
         logger.info(f"Deleted S3 object: {bucket_name}/{object_key}")
