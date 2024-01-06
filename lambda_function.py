@@ -1,18 +1,28 @@
 import os
 import io
 import json
+import time
 import uuid
 import boto3
 import base64
 import logging
 import pinecone
+from botocore.config import Config
 from datetime import datetime
 from openai import OpenAI
 from langchain.embeddings import OpenAIEmbeddings
 
 # Initialize
-s3 = boto3.client('s3')
-lam = boto3.client('lambda')
+config = Config(
+    read_timeout=900,
+    connect_timeout=900,
+    retries={"max_attempts": 0},
+    tcp_keepalive=True,
+)
+start = time.time()
+session = boto3.Session()
+s3 = session.client('s3')
+lam = session.client('lambda', config=config)
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -42,11 +52,16 @@ def update_metadata_type(metadata, text):
     document = metadata
 
     document['text'] = str(text)
+
     if 'source' in metadata:
         document['source'] = str(metadata['source'])
+    if 'username' in metadata:
+        document['username'] = str(metadata['username'])
+    if 'filename' in metadata:
+        document['filename'] = str(metadata['filename'])
     
-    if 'systemTime' in metadata:
-        document['systemTime'] = int(metadata['systemTime'])
+    # if 'systemTime' in metadata:
+    #     document['systemTime'] = int(metadata['systemTime'])
     if 'currenttimeformattedstring' in metadata:
         document['currenttimeformattedstring'] = str(datetime.strptime(metadata['currenttimeformattedstring'], '%a %d/%m/%y %H:%M'))
     if 'day' in metadata:
@@ -62,16 +77,16 @@ def update_metadata_type(metadata, text):
 
     if 'address' in metadata:
         document['address'] = str(metadata['address'])
-    if 'longitude' in metadata:
-        document['longitude'] = float(metadata['longitude'])
-    if 'latitude' in metadata:
-        document['latitude'] = float(metadata['latitude'])
+    # if 'longitude' in metadata:
+    #     document['longitude'] = float(metadata['longitude'])
+    # if 'latitude' in metadata:
+    #     document['latitude'] = float(metadata['latitude'])
 
     if 'batterylevel' in metadata:
         document['batterylevel'] = int(metadata['batterylevel'])
 
-    if 'firstweatherdescription' in metadata:
-        document['firstweatherdescription'] = str(metadata['firstweatherdescription'])
+    # if 'firstweatherdescription' in metadata:
+    #     document['firstweatherdescription'] = str(metadata['firstweatherdescription'])
     if 'cloudall' in metadata:
         document['cloudall'] = int(metadata['cloudall'])
     if 'feelslike' in metadata:
@@ -98,7 +113,7 @@ def start_processing(event):
     response = lam.invoke(
         FunctionName='mia-audio-pre',
         InvocationType='RequestResponse',  # Use 'Event' for asynchronous invocation
-        Payload=json.dumps(event),
+        Payload=json.dumps(event)
     )
     payload_stream = response['Payload']
     payload_content = payload_stream.read()
