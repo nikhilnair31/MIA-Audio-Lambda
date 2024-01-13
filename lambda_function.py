@@ -138,7 +138,7 @@ def start_processing(event):
         clean_transcript = gpt(clean_model, clean_system_prompt, raw_transcript)
         speaker_label_transcript = gpt(speaker_label_model, speaker_label_system_prompt, clean_transcript)
 
-        if(speaker_label_transcript != '.'):
+        if(speaker_label_transcript != '.' and speaker_label_transcript.lower() != 'null'):
             vectorupsert(speaker_label_transcript, metadata)
     
     # If required delete the S3 object after processing is complete
