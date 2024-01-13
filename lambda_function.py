@@ -29,12 +29,16 @@ logger.setLevel(logging.INFO)
 
 # General
 delete_s3_obj = os.environ.get('DELETE_S3_OBJ', 'False').lower() == 'true'
+audio_cleaning_lambda_name = os.environ.get('AUDIO_CLEANING_LAMBDA_NAME')
 
-# API keys
+# OpenAI Related
 openai_api_key = os.environ.get('OPENAI_API_KEY')
 openai_client = OpenAI(api_key=openai_api_key)
 embeddings_model = OpenAIEmbeddings(openai_api_key=openai_api_key)
+clean_model = str(os.environ.get('CLEAN_MODEL'))
+speaker_label_model = str(os.environ.get('SPEAKER_LABEL_MODEL'))
 
+# Pinecone Related
 pinecone_api_key = os.environ.get('PINECONE_API_KEY')
 pinecone_env_key = os.environ.get('PINECONE_ENV_KEY')
 pinecone_index_name = os.environ.get('PINECONE_INDEX_NAME')
@@ -109,7 +113,7 @@ def start_processing(event):
 
     # Invoke Lambda B
     response = lam.invoke(
-        FunctionName='mia-audio-pre',
+        FunctionName=audio_cleaning_lambda_name,
         InvocationType='RequestResponse',
         Payload=json.dumps(event)
     )
@@ -131,8 +135,8 @@ def start_processing(event):
     # Start processing
     with open(download_path, 'rb') as file_obj:
         raw_transcript = whisper(whisper_prompt, file_obj)
-        clean_transcript = gpt("gpt-3.5-turbo", clean_system_prompt, raw_transcript)
-        speaker_label_transcript = gpt("gpt-4-1106-preview", speaker_label_system_prompt, clean_transcript)
+        clean_transcript = gpt(clean_model, clean_system_prompt, raw_transcript)
+        speaker_label_transcript = gpt(speaker_label_model, speaker_label_system_prompt, clean_transcript)
 
         if(speaker_label_transcript != '.'):
             vectorupsert(speaker_label_transcript, metadata)
