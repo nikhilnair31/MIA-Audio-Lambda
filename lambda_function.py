@@ -85,8 +85,6 @@ def update_metadata_type(metadata, text):
     if 'batterylevel' in metadata:
         document['batterylevel'] = int(metadata['batterylevel'])
 
-    # if 'firstweatherdescription' in metadata:
-    #     document['firstweatherdescription'] = str(metadata['firstweatherdescription'])
     if 'cloudall' in metadata:
         document['cloudall'] = int(metadata['cloudall'])
     if 'feelslike' in metadata:
@@ -112,7 +110,7 @@ def start_processing(event):
     # Invoke Lambda B
     response = lam.invoke(
         FunctionName='mia-audio-pre',
-        InvocationType='RequestResponse',  # Use 'Event' for asynchronous invocation
+        InvocationType='RequestResponse',
         Payload=json.dumps(event)
     )
     payload_stream = response['Payload']
@@ -137,7 +135,7 @@ def start_processing(event):
         speaker_label_transcript = gpt("gpt-4-1106-preview", speaker_label_system_prompt, clean_transcript)
 
         if(speaker_label_transcript != '.'):
-            vector(speaker_label_transcript, metadata)
+            vectorupsert(speaker_label_transcript, metadata)
     
     # If required delete the S3 object after processing is complete
     if delete_s3_obj:
@@ -145,10 +143,10 @@ def start_processing(event):
         logger.info(f"Deleted S3 object: {bucket_name}/{object_key}")
     
 def whisper(system_prompt, file_content):
-    response = openai_client.audio.transcriptions.create(
+    response = openai_client.audio.translations.create(
         model = "whisper-1", 
         file = file_content, 
-        language = "en",
+        # language = "en",
         prompt = system_prompt
     )
     transcript_text = response.text
@@ -169,13 +167,14 @@ def gpt(modelName, system_prompt, user_text):
     logger.info(f"GPT API Response: {assitant_text}\n")
 
     return assitant_text
-def vector(text, metadata):
+def vectorupsert(text, metadata):
     # Initialize the Pinecone client
     embedding = embeddings_model.embed_documents([text])
     updated_metadata = update_metadata_type(metadata, text)
+    vector_id = str(uuid.uuid4())
     index.upsert([
         (
-            str(uuid.uuid4()),  # Convert UUID to string
+            vector_id,  # Convert UUID to string
             embedding[0],
             updated_metadata
         ),
@@ -187,21 +186,8 @@ def handler(event, context):
     try:
         logger.info(f'started lambda_handler\n\n')
 
-        # Running on AWS Lambda
-        if context:
-            start_processing(event)
-        # Running locally
-        else:
-            local_file_path = r'.\Data\recordings\recording_206419037.m4a'
-            object_key = r'recordings\recording_206419037.m4a'
+        start_processing(event)
 
-            with open(local_file_path, 'rb') as file_obj:
-                raw_transcript = whisper(whisper_prompt, file_obj)
-                clean_transcript = gpt("gpt-4-1106-preview", clean_system_prompt, raw_transcript)
-                speaker_label_transcript = gpt("gpt-4-1106-preview", speaker_label_system_prompt, clean_transcript)
-        
-                if(speaker_label_transcript != '.'):
-                    vector(speaker_label_transcript, metadata)
         return {
             'statusCode': 200,
             'body': json.dumps('Processing complete')
@@ -215,20 +201,3 @@ def handler(event, context):
             'statusCode': 400,
             'body': f'Error! {e}'
         }
-
-if __name__ == '__main__':
-    # Dummy context
-    test_context = None
-    # Dummy event
-    test_event = {
-        'Records': [{
-            's3': {
-                'bucket': {'name': 'mia-audiofiles'},
-                'object': {'key': 'recording_155994629.m4a'}
-            }
-        }]
-    }
-
-    # Call the lambda handler
-    response = handler(test_event, test_context)
-    print(response)
