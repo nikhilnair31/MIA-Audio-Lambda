@@ -78,7 +78,7 @@ def update_metadata_type(metadata, text):
     # if 'systemTime' in metadata:
     #     document['systemTime'] = int(metadata['systemTime'])
     if 'currenttimeformattedstring' in metadata:
-        document['currenttimeformattedstring'] = str(datetime.strptime(metadata['currenttimeformattedstring'], '%a %d/%m/%y %H:%M'))
+        document['currenttimeformattedstring'] = str(datetime.strptime(metadata['currenttimeformattedstring'], '%y-%m-%d %H:%M:%S'))
     if 'day' in metadata:
         document['day'] = int(metadata['day'])
     if 'month' in metadata:
@@ -148,7 +148,8 @@ def start_processing(event):
 
     with open(download_path, 'rb') as file_obj:
         file_content = file_obj.read()
-        raw_transcript = deepgram(file_content)
+        # raw_transcript = deepgram(file_content)
+        raw_transcript = whisper(whisper_prompt, file_obj)
         clean_transcript = gpt(clean_model, clean_system_prompt, raw_transcript)
         speaker_label_transcript = gpt(speaker_label_model, speaker_label_system_prompt, clean_transcript)
 
@@ -160,6 +161,16 @@ def start_processing(event):
         s3.delete_object(Bucket=bucket_name, Key=final_obj_key)
         logger.info(f"Deleted S3 object: {bucket_name}/{final_obj_key}")
 
+def whisper(system_prompt, file_content):
+    response = openai_client.audio.translations.create(
+        model = "whisper-1", 
+        file = file_content, 
+        # language = "en",
+        prompt = system_prompt
+    )
+    transcript_text = response.text
+    logger.info(f"Whisper API Response: {transcript_text}\n")
+    return transcript_text
 def deepgram(file_content):
     url = "https://api.deepgram.com/v1/listen"
     audio_format = 'audio/wav'
