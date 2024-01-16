@@ -1,3 +1,4 @@
+# region Imports
 import os
 import io
 import json
@@ -7,12 +8,16 @@ import boto3
 import base64
 import logging
 import pinecone
+import requests
+import urllib.parse
 from botocore.config import Config
 from datetime import datetime
 from openai import OpenAI
 from langchain.embeddings import OpenAIEmbeddings
+# endregion 
 
-# Initialize
+# region Initialization
+# Initialization Related
 config = Config(
     read_timeout=900,
     connect_timeout=900,
@@ -27,8 +32,9 @@ lam = session.client('lambda', config=config)
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# General
+# General Related
 delete_s3_obj = os.environ.get('DELETE_S3_OBJ', 'False').lower() == 'true'
+clean_audio = os.environ.get('CLEAN_AUDIO', 'False').lower() == 'true'
 audio_cleaning_lambda_name = os.environ.get('AUDIO_CLEANING_LAMBDA_NAME')
 
 # OpenAI Related
@@ -37,6 +43,9 @@ openai_client = OpenAI(api_key=openai_api_key)
 embeddings_model = OpenAIEmbeddings(openai_api_key=openai_api_key)
 clean_model = str(os.environ.get('CLEAN_MODEL'))
 speaker_label_model = str(os.environ.get('SPEAKER_LABEL_MODEL'))
+
+# Deepgram Related
+deepgram_api_key = os.environ.get('DEEPGRAM_API_KEY')
 
 # Pinecone Related
 pinecone_api_key = os.environ.get('PINECONE_API_KEY')
@@ -51,7 +60,9 @@ clean_system_prompt = str(os.environ.get('CLEAN_SYSTEM_PROMPT'))
 facts_system_prompt = str(os.environ.get('FACTS_SYSTEM_PROMPT'))
 upsert_check_system_prompt = str(os.environ.get('UPSERT_CHECK_SYSTEM_PROMPT'))
 speaker_label_system_prompt = str(os.environ.get('SPEAKER_LABEL_SYSTEM_PROMPT'))
+# endregion 
 
+# region Functions
 def update_metadata_type(metadata, text):
     document = metadata
 
@@ -111,30 +122,33 @@ def start_processing(event):
     metadata = response.get('Metadata', {})
     logger.info(f"Metadata: {metadata}\n")
 
-    # Invoke Lambda B
-    response = lam.invoke(
-        FunctionName=audio_cleaning_lambda_name,
-        InvocationType='RequestResponse',
-        Payload=json.dumps(event)
-    )
-    payload_stream = response['Payload']
-    payload_content = payload_stream.read()
-    payload_json = json.loads(payload_content)
-    cleaned_audio_path = payload_json.get('body', '').replace("\"", "")
-    logger.info(f"cleaned_audio_path: {cleaned_audio_path}\n")
+    # Invoke Lambda B for audio cleaning
+    final_obj_key = ''
+    if clean_audio:
+        response = lam.invoke(
+            FunctionName=audio_cleaning_lambda_name,
+            InvocationType='RequestResponse',
+            Payload=json.dumps(event)
+        )
+        payload_stream = response['Payload']
+        payload_content = payload_stream.read()
+        payload_json = json.loads(payload_content)
+        cleaned_audio_path = payload_json.get('body', '').replace("\"", "")
+        final_obj_key = cleaned_audio_path
+        logger.info(f"final_obj_key: {final_obj_key}")
+    else:
+        final_obj_key = object_key
     
     # Create a path to download the cleaned audio file
-    filename = cleaned_audio_path.split("/")[-1].strip()
+    filename = final_obj_key.split("/")[-1].strip()
     updated_filename = filename.replace("\"", "").strip()
     download_path = os.path.join('/tmp', updated_filename)
     logger.info(f"filename: {filename}\ndownload_path: {download_path}")
-    
-    # Downloading file
-    s3.download_file(bucket_name, cleaned_audio_path, download_path)
-    
-    # Start processing
+    s3.download_file(bucket_name, final_obj_key, download_path)
+
     with open(download_path, 'rb') as file_obj:
-        raw_transcript = whisper(whisper_prompt, file_obj)
+        file_content = file_obj.read()
+        raw_transcript = deepgram(file_content)
         clean_transcript = gpt(clean_model, clean_system_prompt, raw_transcript)
         speaker_label_transcript = gpt(speaker_label_model, speaker_label_system_prompt, clean_transcript)
 
@@ -143,21 +157,33 @@ def start_processing(event):
     
     # If required delete the S3 object after processing is complete
     if delete_s3_obj:
-        s3.delete_object(Bucket=bucket_name, Key=object_key)
-        logger.info(f"Deleted S3 object: {bucket_name}/{object_key}")
+        s3.delete_object(Bucket=bucket_name, Key=final_obj_key)
+        logger.info(f"Deleted S3 object: {bucket_name}/{final_obj_key}")
+
+def deepgram(file_content):
+    url = "https://api.deepgram.com/v1/listen"
+    audio_format = 'audio/wav'
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": audio_format,
+        "Authorization": f"Token {deepgram_api_key}"
+    }
+    params = {
+        'model': 'nova-2-general',
+        'version': 'latest',
+        'detect_language': 'true',
+        'diarize': 'true',
+        'smart_format': 'true',
+        'filler_words': 'true'
+    }
+    response = requests.post(url, params=params, headers=headers, data=file_content, timeout=300)
     
-def whisper(system_prompt, file_content):
-    response = openai_client.audio.translations.create(
-        model = "whisper-1", 
-        file = file_content, 
-        # language = "en",
-        prompt = system_prompt
-    )
-    transcript_text = response.text
-
-    logger.info(f"Whisper API Response: {transcript_text}\n")
-
-    return transcript_text
+    response_json = response.json()
+    logger.info(f"Deepgram API response_json: {response_json}\n")
+    final_transcript = response_json.results.channels[0].alternatives[0].paragraphs.transcript
+    logger.info(f"Deepgram API final_transcript: {final_transcript}\n")
+    
+    return final_transcript
 def gpt(modelName, system_prompt, user_text):
     response = openai_client.chat.completions.create(
         model=modelName,
@@ -185,7 +211,9 @@ def vectorupsert(text, metadata):
     ])
 
     logger.info(f"Upserted into DB successfully!\n")
+# endregion 
 
+# region Main
 def handler(event, context):
     try:
         logger.info(f'started lambda_handler\n\n')
@@ -205,3 +233,4 @@ def handler(event, context):
             'statusCode': 400,
             'body': f'Error! {e}'
         }
+# endregion 
