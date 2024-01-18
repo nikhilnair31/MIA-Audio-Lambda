@@ -33,36 +33,117 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # General Related
-delete_s3_obj = os.environ.get('DELETE_S3_OBJ', 'False').lower() == 'true'
-clean_audio = os.environ.get('CLEAN_AUDIO', 'False').lower() == 'true'
-audio_cleaning_lambda_name = os.environ.get('AUDIO_CLEANING_LAMBDA_NAME')
+DELETE_S3_OBJ = os.environ.get('DELETE_S3_OBJ', 'False').lower() == 'true'
+CLEAN_AUDIO = os.environ.get('CLEAN_AUDIO', 'False').lower() == 'true'
+AUDIO_CLEANING_LAMBDA_NAME = os.environ.get('AUDIO_CLEANING_LAMBDA_NAME')
 
 # OpenAI Related
-openai_api_key = os.environ.get('OPENAI_API_KEY')
-openai_client = OpenAI(api_key=openai_api_key)
-embeddings_model = OpenAIEmbeddings(openai_api_key=openai_api_key)
-clean_model = str(os.environ.get('CLEAN_MODEL'))
-speaker_label_model = str(os.environ.get('SPEAKER_LABEL_MODEL'))
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
+embeddings_model = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
+CLEAN_MODEL = str(os.environ.get('CLEAN_MODEL'))
+SPEAKER_LABEL_MODEL = str(os.environ.get('SPEAKER_LABEL_MODEL'))
 
 # Deepgram Related
-deepgram_api_key = os.environ.get('DEEPGRAM_API_KEY')
+DEEPGRAM_API_KEY = os.environ.get('DEEPGRAM_API_KEY')
 
 # Pinecone Related
-pinecone_api_key = os.environ.get('PINECONE_API_KEY')
-pinecone_env_key = os.environ.get('PINECONE_ENV_KEY')
-pinecone_index_name = os.environ.get('PINECONE_INDEX_NAME')
-pinecone.init(api_key=pinecone_api_key, environment=pinecone_env_key)
-index = pinecone.Index(pinecone_index_name)
+PINECONE_API_KEY = os.environ.get('PINECONE_API_KEY')
+PINECONE_ENV_KEY = os.environ.get('PINECONE_ENV_KEY')
+PINECONE_INDEX_NAME = os.environ.get('PINECONE_INDEX_NAME')
+pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENV_KEY)
+index = pinecone.Index(PINECONE_INDEX_NAME)
 
 # System Prompts
-whisper_prompt = str(os.environ.get('WHISPER_PROMPT'))
-clean_system_prompt = str(os.environ.get('CLEAN_SYSTEM_PROMPT'))
-facts_system_prompt = str(os.environ.get('FACTS_SYSTEM_PROMPT'))
-upsert_check_system_prompt = str(os.environ.get('UPSERT_CHECK_SYSTEM_PROMPT'))
-speaker_label_system_prompt = str(os.environ.get('SPEAKER_LABEL_SYSTEM_PROMPT'))
+WHISPER_PROMPT = str(os.environ.get('WHISPER_PROMPT'))
+CLEAN_SYSTEM_PROMPT = str(os.environ.get('CLEAN_SYSTEM_PROMPT'))
+FACTS_SYSTEM_PROMPT = str(os.environ.get('FACTS_SYSTEM_PROMPT'))
+UPSERT_CHECK_SYSTEM_PROMPT = str(os.environ.get('UPSERT_CHECK_SYSTEM_PROMPT'))
+SPEAKER_LABEL_SYSTEM_PROMPT = str(os.environ.get('SPEAKER_LABEL_SYSTEM_PROMPT'))
 # endregion 
 
 # region Functions
+def pulling_s3_object_details(event):
+    logger.info(f'Pulling S3 Object Details...')
+
+    # Get global bucket name and object key from the event
+    bucket_name = event['Records'][0]['s3']['bucket']['name']
+    initial_object_key = event['Records'][0]['s3']['object']['key']
+    logger.info(f"Event\nBucket Name: {bucket_name}\nObject Key: {initial_object_key}")
+
+    return bucket_name, initial_object_key
+
+def downloading_s3_objects(event, bucket_name, initial_object_key):
+    logger.info(f'Downloading S3 Objects (audio file and metadata)...')
+
+    # Retrieve metadata for the object
+    audiofile_s3obj = s3.head_object(Bucket=bucket_name, Key=initial_object_key)
+    audiofile_metadata = audiofile_s3obj.get('Metadata', {})
+    logger.info(f"Audio File Metadata: {audiofile_metadata}\n")
+
+    # Check if audio cleaning is required by flag
+    final_object_key = clean_or_not_final_audio_path(event, bucket_name, initial_object_key)
+    logger.info(f"Final Audio File's Object Key: {final_object_key}")
+
+    # Create a path to download the final audio file
+    audiofile_name = final_object_key.split("/")[-1].strip()
+    updated_audiofile_name = audiofile_name.replace("\"", "").strip()
+    audiofile_download_path = os.path.join('/tmp', updated_audiofile_name)
+    logger.info(f"Audio file name: {audiofile_name} - Audio file download path: {audiofile_download_path}")
+    s3.download_file(bucket_name, final_object_key, audiofile_download_path)
+    
+    return audiofile_s3obj, final_object_key, audiofile_download_path, audiofile_metadata
+
+def start_processing(bucket_name, final_object_key, audiofile_s3obj, audiofile_download_path, audiofile_metadata):
+    logger.info(f'Starting processing audio..')
+
+    raw_transcript = ''
+
+    with open(audiofile_download_path, 'rb') as file_obj:
+        file_content = file_obj.read()
+        raw_transcript = deepgram(file_content)
+        # raw_transcript = whisper(file_obj)
+    
+        clean_transcript = gpt(CLEAN_MODEL, CLEAN_SYSTEM_PROMPT, raw_transcript)
+        
+        speaker_label_transcript = gpt(SPEAKER_LABEL_MODEL, SPEAKER_LABEL_SYSTEM_PROMPT, clean_transcript)
+
+    if speaker_label_transcript.lower() not in {'.', 'null'}:
+        vector_id = vectorupsert(speaker_label_transcript, audiofile_metadata)
+    
+def delete_or_not_audio_file(bucket_name, final_object_key):
+    logger.info(f'Deleting audio file...')
+
+    # If required delete the S3 object after processing is complete
+    if DELETE_S3_OBJ:
+        s3.delete_object(Bucket=bucket_name, Key=final_object_key)
+        logger.info(f"Deleted S3 object: {bucket_name}/{final_object_key}")
+
+def clean_or_not_final_audio_path(event, bucket_name, initial_object_key):
+    logger.info(f'Creating final audio file object key...')
+
+    if CLEAN_AUDIO:
+        logger.info(f"Cleaning audio file...")
+
+        # Invoke Lambda B for audio cleaning
+        audio_cleaning_lambda_response = lam.invoke(
+            FunctionName=AUDIO_CLEANING_LAMBDA_NAME,
+            InvocationType='RequestResponse',
+            Payload=json.dumps(event)
+        )
+        payload_stream = audio_cleaning_lambda_response['Payload']
+        payload_content = payload_stream.read()
+        payload_json = json.loads(payload_content)
+        cleaned_audiofile_object_key = payload_json.get('body', '').replace("\"", "")
+        
+        s3.delete_object(Bucket=bucket_name, Key=initial_object_key)
+        logger.info(f"Deleted Initial Audio File S3 Object at {bucket_name}/{initial_object_key}")
+
+        return cleaned_audiofile_object_key
+
+    logger.info(f"NOT cleaning audio file...")
+    return null
+
 def update_metadata_type(metadata, text):
     document = metadata
 
@@ -75,10 +156,8 @@ def update_metadata_type(metadata, text):
     if 'filename' in metadata:
         document['filename'] = str(metadata['filename'])
     
-    # if 'systemTime' in metadata:
-    #     document['systemTime'] = int(metadata['systemTime'])
     if 'currenttimeformattedstring' in metadata:
-        document['currenttimeformattedstring'] = str(datetime.strptime(metadata['currenttimeformattedstring'], '%y-%m-%d %H:%M:%S'))
+        document['currenttimeformattedstring'] = str(datetime.strptime(metadata['currenttimeformattedstring'], '%Y-%m-%d %H:%M:%S'))
     if 'day' in metadata:
         document['day'] = int(metadata['day'])
     if 'month' in metadata:
@@ -92,10 +171,6 @@ def update_metadata_type(metadata, text):
 
     if 'address' in metadata:
         document['address'] = str(metadata['address'])
-    # if 'longitude' in metadata:
-    #     document['longitude'] = float(metadata['longitude'])
-    # if 'latitude' in metadata:
-    #     document['latitude'] = float(metadata['latitude'])
 
     if 'batterylevel' in metadata:
         document['batterylevel'] = int(metadata['batterylevel'])
@@ -111,73 +186,23 @@ def update_metadata_type(metadata, text):
 
     return document
 
-def start_processing(event):
-    # Get bucket name and object key from the event
-    bucket_name = event['Records'][0]['s3']['bucket']['name']
-    object_key = event['Records'][0]['s3']['object']['key']
-    logger.info(f"Event: {bucket_name} - {object_key}\n")
-    
-    # Retrieve metadata for the object
-    response = s3.head_object(Bucket=bucket_name, Key=object_key)
-    metadata = response.get('Metadata', {})
-    logger.info(f"Metadata: {metadata}\n")
-
-    # Invoke Lambda B for audio cleaning
-    final_obj_key = ''
-    if clean_audio:
-        response = lam.invoke(
-            FunctionName=audio_cleaning_lambda_name,
-            InvocationType='RequestResponse',
-            Payload=json.dumps(event)
-        )
-        payload_stream = response['Payload']
-        payload_content = payload_stream.read()
-        payload_json = json.loads(payload_content)
-        cleaned_audio_path = payload_json.get('body', '').replace("\"", "")
-        final_obj_key = cleaned_audio_path
-        logger.info(f"final_obj_key: {final_obj_key}")
-    else:
-        final_obj_key = object_key
-    
-    # Create a path to download the cleaned audio file
-    filename = final_obj_key.split("/")[-1].strip()
-    updated_filename = filename.replace("\"", "").strip()
-    download_path = os.path.join('/tmp', updated_filename)
-    logger.info(f"filename: {filename}\ndownload_path: {download_path}")
-    s3.download_file(bucket_name, final_obj_key, download_path)
-
-    with open(download_path, 'rb') as file_obj:
-        file_content = file_obj.read()
-        # raw_transcript = deepgram(file_content)
-        raw_transcript = whisper(whisper_prompt, file_obj)
-        clean_transcript = gpt(clean_model, clean_system_prompt, raw_transcript)
-        speaker_label_transcript = gpt(speaker_label_model, speaker_label_system_prompt, clean_transcript)
-
-        if(speaker_label_transcript != '.' and speaker_label_transcript.lower() != 'null'):
-            vectorupsert(speaker_label_transcript, metadata)
-    
-    # If required delete the S3 object after processing is complete
-    if delete_s3_obj:
-        s3.delete_object(Bucket=bucket_name, Key=final_obj_key)
-        logger.info(f"Deleted S3 object: {bucket_name}/{final_obj_key}")
-
-def whisper(system_prompt, file_content):
+def whisper(file_content):
     response = openai_client.audio.translations.create(
         model = "whisper-1", 
         file = file_content, 
         # language = "en",
-        prompt = system_prompt
+        prompt = WHISPER_PROMPT
     )
     transcript_text = response.text
     logger.info(f"Whisper API Response: {transcript_text}\n")
     return transcript_text
+
 def deepgram(file_content):
     url = "https://api.deepgram.com/v1/listen"
-    audio_format = 'audio/wav'
     headers = {
         "Accept": "application/json",
-        "Content-Type": audio_format,
-        "Authorization": f"Token {deepgram_api_key}"
+        "Content-Type": 'audio/wav',
+        "Authorization": f"Token {DEEPGRAM_API_KEY}"
     }
     params = {
         'model': 'nova-2-general',
@@ -191,10 +216,14 @@ def deepgram(file_content):
     
     response_json = response.json()
     logger.info(f"Deepgram API response_json: {response_json}\n")
-    final_transcript = response_json.results.channels[0].alternatives[0].paragraphs.transcript
+
+    # Extract transcript if available, otherwise use default
+    response_data = response_json['results']['channels'][0]['alternatives'][0]
+    final_transcript = response_data.get('paragraphs', {}).get('transcript', response_data['transcript'])
     logger.info(f"Deepgram API final_transcript: {final_transcript}\n")
     
     return final_transcript
+
 def gpt(modelName, system_prompt, user_text):
     response = openai_client.chat.completions.create(
         model=modelName,
@@ -208,40 +237,47 @@ def gpt(modelName, system_prompt, user_text):
     logger.info(f"GPT API Response: {assitant_text}\n")
 
     return assitant_text
+
 def vectorupsert(text, metadata):
+    logger.info(f"Upserting vector to Pinecone...")
+
     # Initialize the Pinecone client
     embedding = embeddings_model.embed_documents([text])
     updated_metadata = update_metadata_type(metadata, text)
     vector_id = str(uuid.uuid4())
     index.upsert([
         (
-            vector_id,  # Convert UUID to string
+            vector_id,
             embedding[0],
             updated_metadata
         ),
     ])
 
-    logger.info(f"Upserted into DB successfully!\n")
+    logger.info(f"Upserted successfully!\n")
+
+    return vector_id
 # endregion 
 
 # region Main
 def handler(event, context):
     try:
-        logger.info(f'started lambda_handler\n\n')
+        logger.info(f'Started!')
 
-        start_processing(event)
+        bucket_name, initial_object_key = pulling_s3_object_details(event)
+        audiofile_s3obj, final_object_key, audiofile_download_path, audiofile_metadata = downloading_s3_objects(event, bucket_name, initial_object_key)
+        start_processing(bucket_name, final_object_key, audiofile_s3obj, audiofile_download_path, audiofile_metadata)
+        delete_or_not_audio_file(bucket_name, final_object_key)
 
         return {
             'statusCode': 200,
-            'body': json.dumps('Processing complete')
+            'body': json.dumps('Processing complete!')
         }
 
     except Exception as e: 
-        logger.error(f'Error: \n{e}\n\n')
-        logger.error("Stack Trace:", exc_info=True)
+        logger.error(f'Error: {e}', exc_info=True)
         
         return {
             'statusCode': 400,
-            'body': f'Error! {e}'
+            'body': f'Error :(\n{e}'
         }
 # endregion 
