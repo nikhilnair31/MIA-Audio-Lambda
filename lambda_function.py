@@ -46,6 +46,12 @@ embeddings_model = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
 DEEPGRAM_API_KEY = os.environ.get('DEEPGRAM_API_KEY')
 CLEAN_MODEL = str(os.environ.get('CLEAN_MODEL'))
 
+# Together Related
+TOGETHER_API_KEY = str(os.environ.get('TOGETHER_API_KEY'))
+
+# HuggingFace Related
+HUGGINGFACE_API_KEY = str(os.environ.get('HUGGINGFACE_API_KEY'))
+
 # Pinecone Related
 PINECONE_API_KEY = os.environ.get('PINECONE_API_KEY')
 PINECONE_ENV_KEY = os.environ.get('PINECONE_ENV_KEY')
@@ -55,6 +61,7 @@ index = pinecone.Index(PINECONE_INDEX_NAME)
 
 # System Prompts
 CLEAN_SYSTEM_PROMPT = str(os.environ.get('CLEAN_SYSTEM_PROMPT'))
+SPEAKER_LABEL_SYSTEM_PROMPT = str(os.environ.get('SPEAKER_LABEL_SYSTEM_PROMPT'))
 # endregion 
 
 # region Functions
@@ -98,10 +105,12 @@ def start_processing(bucket_name, final_object_key, audiofile_s3obj, audiofile_d
         file_content = file_obj.read()
         raw_transcript = deepgram(file_content)
     
-    clean_transcript = together(CLEAN_MODEL, CLEAN_SYSTEM_PROMPT, raw_transcript)
-
-    if clean_transcript.lower() not in {'', '.', 'null'}:
-        vector_id = vectorupsert(clean_transcript, audiofile_metadata)
+    clean_transcript = together(CLEAN_MODEL, None, f"{CLEAN_SYSTEM_PROMPT}\n\n{raw_transcript}")
+    # speaker_label_transcript = together(CLEAN_MODEL, null, f"{SPEAKER_LABEL_SYSTEM_PROMPT}\n{clean_transcript}")
+    
+    final_transcript = clean_transcript
+    if final_transcript.lower() not in {'', '.', 'null'}:
+        vector_id = vectorupsert(final_transcript, audiofile_metadata)
     
 def delete_or_not_audio_file(bucket_name, final_object_key):
     logger.info(f'Deleting audio file...')
@@ -188,13 +197,13 @@ def deepgram(file_content):
     params = {
         'model': 'nova-2-general',
         'version': 'latest',
-        'detect_language': 'true',
+        # 'detect_language': 'true',
+        'language': 'hi',
         'diarize': 'true',
         'smart_format': 'true',
         'filler_words': 'true'
     }
     response = requests.post(url, params=params, headers=headers, data=file_content, timeout=300)
-    
     response_json = response.json()
     # logger.info(f"Deepgram API response_json: {response_json}\n")
 
@@ -204,29 +213,67 @@ def deepgram(file_content):
     logger.info(f"Deepgram API final_transcript: {final_transcript}\n")
     
     return final_transcript
+def whisper(file_content):
+    response = openai_client.audio.translations.create(
+        model = "whisper-1", 
+        file = file_content, 
+        # language = "en",
+        prompt = WHISPER_PROMPT
+    )
+    transcript_text = response.text
+    logger.info(f"Whisper API Response: {transcript_text}\n")
+    return transcript_text
+def whisperv3(file_content):
+    API_URL = "https://api-inference.huggingface.co/models/openai/whisper-large-v3"
+    headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
+
+    response = requests.post(API_URL, headers=headers, data=file_content)
+    response_json = response.json()
+    logger.info(f"Hugging Face Whisper v3 API response_json: {response_json}\n")
+    final_transcript = response_json['text']
+    logger.info(f"Hugging Face Whisper v3 API final_transcript: {final_transcript}\n")
+
+    return final_transcript
 
 def together(modelName, system_prompt, user_text):
+    messages = [
+        {"role": "user", "content": user_text}
+    ]
+    if system_prompt is not None:
+        messages.insert(0, {"role": "system", "content": system_prompt})
+
     url = "https://api.together.xyz/v1/chat/completions"
     payload = {
         "model": modelName,
         "max_tokens": 1024,
         "temperature": 0.0,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_text}
-        ]
+        "messages": messages
     }
     headers = {
         "accept": "application/json",
         "content-type": "application/json",
-        "Authorization": f"Bearer 878cecce3658eeea8a1fc9085f5f935f95b2e80f7b17e3f1a16a60c297f343be"
+        "Authorization": f"Bearer {TOGETHER_API_KEY}"
     }
+
     response = requests.post(url, json=payload, headers=headers)
-    logger.info(f"Together API response: {response}\n")
     response_data = json.loads(response.text)
-    logger.info(f"Together API response_data: {response_data}\n")
     assitant_text = response_data['choices'][0]['message']['content']
     logger.info(f"Together API assitant_text: {assitant_text}\n")
+
+    return assitant_text
+def gpt(modelName, system_prompt, user_text):
+    messages = [
+        {"role": "user", "content": user_text}
+    ]
+    if system_prompt is not None:
+        messages.insert(0, {"role": "system", "content": system_prompt})
+    
+    response = openai_client.chat.completions.create(
+        model=modelName,
+        messages=messages
+    )
+    assitant_text = response.choices[0].message.content
+    logger.info(f"GPT API Response: {assitant_text}\n")
 
     return assitant_text
 
