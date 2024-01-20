@@ -41,11 +41,10 @@ AUDIO_CLEANING_LAMBDA_NAME = os.environ.get('AUDIO_CLEANING_LAMBDA_NAME')
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
 embeddings_model = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
-CLEAN_MODEL = str(os.environ.get('CLEAN_MODEL'))
-SPEAKER_LABEL_MODEL = str(os.environ.get('SPEAKER_LABEL_MODEL'))
 
 # Deepgram Related
 DEEPGRAM_API_KEY = os.environ.get('DEEPGRAM_API_KEY')
+CLEAN_MODEL = str(os.environ.get('CLEAN_MODEL'))
 
 # Pinecone Related
 PINECONE_API_KEY = os.environ.get('PINECONE_API_KEY')
@@ -55,11 +54,7 @@ pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENV_KEY)
 index = pinecone.Index(PINECONE_INDEX_NAME)
 
 # System Prompts
-WHISPER_PROMPT = str(os.environ.get('WHISPER_PROMPT'))
 CLEAN_SYSTEM_PROMPT = str(os.environ.get('CLEAN_SYSTEM_PROMPT'))
-FACTS_SYSTEM_PROMPT = str(os.environ.get('FACTS_SYSTEM_PROMPT'))
-UPSERT_CHECK_SYSTEM_PROMPT = str(os.environ.get('UPSERT_CHECK_SYSTEM_PROMPT'))
-SPEAKER_LABEL_SYSTEM_PROMPT = str(os.environ.get('SPEAKER_LABEL_SYSTEM_PROMPT'))
 # endregion 
 
 # region Functions
@@ -102,14 +97,11 @@ def start_processing(bucket_name, final_object_key, audiofile_s3obj, audiofile_d
     with open(audiofile_download_path, 'rb') as file_obj:
         file_content = file_obj.read()
         raw_transcript = deepgram(file_content)
-        # raw_transcript = whisper(file_obj)
     
-        clean_transcript = gpt(CLEAN_MODEL, CLEAN_SYSTEM_PROMPT, raw_transcript)
-        
-        speaker_label_transcript = gpt(SPEAKER_LABEL_MODEL, SPEAKER_LABEL_SYSTEM_PROMPT, clean_transcript)
+    clean_transcript = together(CLEAN_MODEL, CLEAN_SYSTEM_PROMPT, raw_transcript)
 
-    if speaker_label_transcript.lower() not in {'.', 'null'}:
-        vector_id = vectorupsert(speaker_label_transcript, audiofile_metadata)
+    if clean_transcript.lower() not in {'', '.', 'null'}:
+        vector_id = vectorupsert(clean_transcript, audiofile_metadata)
     
 def delete_or_not_audio_file(bucket_name, final_object_key):
     logger.info(f'Deleting audio file...')
@@ -186,17 +178,6 @@ def update_metadata_type(metadata, text):
 
     return document
 
-def whisper(file_content):
-    response = openai_client.audio.translations.create(
-        model = "whisper-1", 
-        file = file_content, 
-        # language = "en",
-        prompt = WHISPER_PROMPT
-    )
-    transcript_text = response.text
-    logger.info(f"Whisper API Response: {transcript_text}\n")
-    return transcript_text
-
 def deepgram(file_content):
     url = "https://api.deepgram.com/v1/listen"
     headers = {
@@ -215,7 +196,7 @@ def deepgram(file_content):
     response = requests.post(url, params=params, headers=headers, data=file_content, timeout=300)
     
     response_json = response.json()
-    logger.info(f"Deepgram API response_json: {response_json}\n")
+    # logger.info(f"Deepgram API response_json: {response_json}\n")
 
     # Extract transcript if available, otherwise use default
     response_data = response_json['results']['channels'][0]['alternatives'][0]
@@ -224,17 +205,28 @@ def deepgram(file_content):
     
     return final_transcript
 
-def gpt(modelName, system_prompt, user_text):
-    response = openai_client.chat.completions.create(
-        model=modelName,
-        messages=[
+def together(modelName, system_prompt, user_text):
+    url = "https://api.together.xyz/v1/chat/completions"
+    payload = {
+        "model": modelName,
+        "max_tokens": 1024,
+        "temperature": 0.0,
+        "messages": [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_text},
+            {"role": "user", "content": user_text}
         ]
-    )
-    assitant_text = response.choices[0].message.content
-
-    logger.info(f"GPT API Response: {assitant_text}\n")
+    }
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "Authorization": f"Bearer 878cecce3658eeea8a1fc9085f5f935f95b2e80f7b17e3f1a16a60c297f343be"
+    }
+    response = requests.post(url, json=payload, headers=headers)
+    logger.info(f"Together API response: {response}\n")
+    response_data = json.loads(response.text)
+    logger.info(f"Together API response_data: {response_data}\n")
+    assitant_text = response_data['choices'][0]['message']['content']
+    logger.info(f"Together API assitant_text: {assitant_text}\n")
 
     return assitant_text
 
