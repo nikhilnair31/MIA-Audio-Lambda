@@ -187,6 +187,7 @@ def update_metadata_type(metadata, text):
 
     return document
 
+# STT APIs
 def deepgram(file_content):
     url = "https://api.deepgram.com/v1/listen"
     headers = {
@@ -198,7 +199,7 @@ def deepgram(file_content):
         'model': 'nova-2-general',
         'version': 'latest',
         # 'detect_language': 'true',
-        'language': 'hi',
+        'language': 'en',
         'diarize': 'true',
         'smart_format': 'true',
         'filler_words': 'true'
@@ -235,6 +236,7 @@ def whisperv3(file_content):
 
     return final_transcript
 
+# LLM APIs
 def together(modelName, system_prompt, user_text):
     messages = [
         {"role": "user", "content": user_text}
@@ -277,6 +279,7 @@ def gpt(modelName, system_prompt, user_text):
 
     return assitant_text
 
+# Vector DB Operations
 def vectorupsert(text, metadata):
     logger.info(f"Upserting vector to Pinecone...")
 
