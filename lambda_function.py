@@ -39,8 +39,9 @@ AUDIO_CLEANING_LAMBDA_NAME = os.environ.get('AUDIO_CLEANING_LAMBDA_NAME')
 
 # OpenAI Related
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
+EMBEDDING_MODEL = os.environ.get('EMBEDDING_MODEL')
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
-embeddings_model = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
+embeddings_model = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY, model=EMBEDDING_MODEL, dimensions=1536)
 
 # Deepgram Related
 DEEPGRAM_API_KEY = os.environ.get('DEEPGRAM_API_KEY')

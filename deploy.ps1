@@ -17,8 +17,9 @@ function Check-ECRRepositoryExists {
 $name = "mia-audio"
 
 # Login
-"Loggin in..."
+"Logging in..."
 aws ecr get-login-password | docker login --username AWS --password-stdin 832214191436.dkr.ecr.ap-south-1.amazonaws.com
+""
 
 # ECR
 "ECR"
@@ -33,6 +34,7 @@ if ($images.imageDetails) {
         aws ecr batch-delete-image --repository-name $name --image-ids "imageDigest=$($_.imageDigest)"
     }
 }
+""
 
 # Docker
 "Docker"
@@ -44,6 +46,7 @@ docker tag ${name}:latest 832214191436.dkr.ecr.ap-south-1.amazonaws.com/${name}:
 docker push 832214191436.dkr.ecr.ap-south-1.amazonaws.com/${name}:latest
 # List images in the repository to confirm the push
 aws ecr list-images --repository-name ${name} --region ap-south-1
+""
 
 # ECR
 "ECR"
@@ -61,6 +64,7 @@ if (-not $latestImageDigest) {
 }
 # Construct the image URI using the image digest
 $imageUri = "832214191436.dkr.ecr.ap-south-1.amazonaws.com/${name}@${latestImageDigest}"    
+""
 
 # Lambda
 "Lambda"
@@ -72,3 +76,13 @@ if ($lambdaUpdate) {
 } else {
     "Failed to update Lambda function"
 }
+""
+
+# Git
+"Git"
+# Commit and push the changes with the commit message "aws deploy"
+git add .
+git commit -m "aws deploy"
+git push
+"Commited and Pushed"
+""
