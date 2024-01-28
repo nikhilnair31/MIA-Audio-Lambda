@@ -13,7 +13,7 @@ import urllib.parse
 from botocore.config import Config
 from datetime import datetime
 from openai import OpenAI
-from langchain.embeddings import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 # endregion 
 
 # region Initialization
