@@ -99,16 +99,10 @@ def downloading_s3_objects(event, bucket_name, initial_object_key):
 def start_processing(bucket_name, final_object_key, audiofile_s3obj, audiofile_download_path, audiofile_metadata):
     logger.info(f'Starting processing audio..')
 
-    raw_transcript = ''
-
     with open(audiofile_download_path, 'rb') as file_obj:
         file_content = file_obj.read()
-        raw_transcript = deepgram(file_content)
-    
-    if not result or result.strip() in ('', '.', 'null'):
-        raw_transcript = 'null'
-    else:
-        raw_transcript = result
+        result = deepgram(file_content)
+        raw_transcript = 'null' if not (result) or result.strip() in ('', '.', 'null') else result
     
     final_llm_input = f"{raw_transcript}\n{CLEAN_SYSTEM_PROMPT}"
     logger.info(f'final_llm_input\n{final_llm_input}')
@@ -116,8 +110,8 @@ def start_processing(bucket_name, final_object_key, audiofile_s3obj, audiofile_d
     clean_transcript = together(CLEAN_MODEL, None, final_llm_input)
     # speaker_label_transcript = together(CLEAN_MODEL, null, f"{SPEAKER_LABEL_SYSTEM_PROMPT}\n{clean_transcript}")
     
-    final_transcript = clean_transcript
-    if final_transcript.lower() not in {'', '.', 'null'}:
+    final_transcript = clean_transcript.lower()
+    if final_transcript not in {'', '.', 'null'}:
         vector_id = vectorupsert(final_transcript, audiofile_metadata)
     
 def delete_or_not_audio_file(bucket_name, final_object_key, audiofile_metadata):
