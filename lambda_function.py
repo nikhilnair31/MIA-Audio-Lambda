@@ -113,12 +113,16 @@ def start_processing(bucket_name, final_object_key, audiofile_s3obj, audiofile_d
         vector_id = vectorupsert(final_transcript, audiofile_metadata)
     
 def delete_or_not_audio_file(bucket_name, final_object_key, audiofile_metadata):
-    logger.info(f'Deleting audio file...')
+    logger.info(f'Deletion...')
 
     # If required delete the S3 object after processing is complete
-    if audiofile_metadata["saveaudiofiles"] != "false":
+    if audiofile_metadata["saveaudiofiles"] == "false":
         s3.delete_object(Bucket=bucket_name, Key=final_object_key)
         logger.info(f"Deleted S3 object: {bucket_name}/{final_object_key}")
+        return
+    
+    logger.info(f'Not Deleted!')
+    return
 
 def clean_or_not_final_audio_path(event, bucket_name, initial_object_key):
     logger.info(f'Creating final audio file object key...')
