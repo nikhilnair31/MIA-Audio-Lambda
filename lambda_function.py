@@ -116,7 +116,7 @@ def delete_or_not_audio_file(bucket_name, final_object_key, audiofile_metadata):
     logger.info(f'Deleting audio file...')
 
     # If required delete the S3 object after processing is complete
-    if audiofile_metadata["saveAudioFiles"] != "false":
+    if audiofile_metadata["saveaudiofiles"] != "false":
         s3.delete_object(Bucket=bucket_name, Key=final_object_key)
         logger.info(f"Deleted S3 object: {bucket_name}/{final_object_key}")
 
