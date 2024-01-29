@@ -33,7 +33,6 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # General Related
-CLEAN_AUDIO = os.environ.get('CLEAN_AUDIO', 'False').lower() == 'true'
 AUDIO_CLEANING_LAMBDA_NAME = os.environ.get('AUDIO_CLEANING_LAMBDA_NAME')
 
 # OpenAI Related
@@ -84,7 +83,7 @@ def downloading_s3_objects(event, bucket_name, initial_object_key):
     logger.info(f"Audio File Metadata: {audiofile_metadata}\n")
 
     # Check if audio cleaning is required by flag
-    final_object_key = clean_or_not_final_audio_path(event, bucket_name, initial_object_key)
+    final_object_key = clean_or_not_final_audio_path(event, bucket_name, initial_object_key, audiofile_metadata)
     logger.info(f"Final Audio File's Object Key: {final_object_key}")
 
     # Create a path to download the final audio file
@@ -126,17 +125,23 @@ def delete_or_not_audio_file(bucket_name, final_object_key, audiofile_metadata):
     logger.info(f'Not Deleted!')
     return
 
-def clean_or_not_final_audio_path(event, bucket_name, initial_object_key):
+def clean_or_not_final_audio_path(event, bucket_name, initial_object_key, audiofile_metadata):
     logger.info(f'Creating final audio file object key...')
 
-    if CLEAN_AUDIO:
+    if audiofile_metadata["cleanaudio"] == "true":
         logger.info(f"Cleaning audio file...")
+
+        # Make a copy of event and add parameters from app 
+        updated_event = event
+        updated_event['filtermusic'] = audiofile_metadata["filtermusic"]
+        updated_event['normalizeloudness'] = audiofile_metadata["normalizeloudness"]
+        updated_event['removesilence'] = audiofile_metadata["removesilence"]
 
         # Invoke Lambda B for audio cleaning
         audio_cleaning_lambda_response = lam.invoke(
             FunctionName=AUDIO_CLEANING_LAMBDA_NAME,
             InvocationType='RequestResponse',
-            Payload=json.dumps(event)
+            Payload=json.dumps(updated_event)
         )
         payload_stream = audio_cleaning_lambda_response['Payload']
         payload_content = payload_stream.read()
@@ -177,7 +182,7 @@ def update_metadata_type(metadata, text):
         document['minutes'] = int(metadata['minutes'])
 
     if 'address' in metadata:
-        document['address'] = urllib.parse.unquote(str(metadata['address']), encoding='utf-8')
+        document['address'] = urllib.parse.unquote(metadata['address'], encoding='utf-8')
 
     if 'batterylevel' in metadata:
         document['batterylevel'] = int(metadata['batterylevel'])
