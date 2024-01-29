@@ -128,7 +128,7 @@ def delete_or_not_audio_file(bucket_name, final_object_key, audiofile_metadata):
 def clean_or_not_final_audio_path(event, bucket_name, initial_object_key, audiofile_metadata):
     logger.info(f'Creating final audio file object key...')
 
-    if audiofile_metadata["cleanaudiofiles"] == "true":
+    if audiofile_metadata["cleanaudio"] == "true":
         logger.info(f"Cleaning audio file...")
 
         # Make a copy of event and add parameters from app 
