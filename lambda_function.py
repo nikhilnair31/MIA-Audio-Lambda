@@ -99,7 +99,7 @@ def downloading_s3_objects(event, bucket_name, initial_object_key):
 def start_processing(bucket_name, final_object_key, audiofile_s3obj, audiofile_download_path, audiofile_metadata):
     logger.info(f'Starting processing audio..')
 
-    raw_transcript = ''
+    raw_transcript = 'null'
 
     with open(audiofile_download_path, 'rb') as file_obj:
         file_content = file_obj.read()
