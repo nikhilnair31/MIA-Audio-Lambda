@@ -151,10 +151,10 @@ def clean_or_not_final_audio_path(event, bucket_name, initial_object_key, audiof
         s3.delete_object(Bucket=bucket_name, Key=initial_object_key)
         logger.info(f"Deleted Initial Audio File S3 Object at {bucket_name}/{initial_object_key}")
 
-        return f'{bucket_name}/{initial_object_key}'
+        return cleaned_audiofile_object_key
 
     logger.info(f"NOT cleaning audio file...")
-    return
+    return f'{bucket_name}/{initial_object_key}'
 
 def update_metadata_type(metadata, text):
     document = metadata
