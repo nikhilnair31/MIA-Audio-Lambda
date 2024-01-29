@@ -105,7 +105,9 @@ def start_processing(bucket_name, final_object_key, audiofile_s3obj, audiofile_d
         file_content = file_obj.read()
         raw_transcript = deepgram(file_content)
     
-    clean_transcript = together(CLEAN_MODEL, None, f"{raw_transcript}\n{CLEAN_SYSTEM_PROMPT}")
+    final_llm_input = f"{raw_transcript}\n{CLEAN_SYSTEM_PROMPT}"
+    logger.info(f'final_llm_input\n{final_llm_input}')
+    clean_transcript = together(CLEAN_MODEL, None, final_llm_input)
     # speaker_label_transcript = together(CLEAN_MODEL, null, f"{SPEAKER_LABEL_SYSTEM_PROMPT}\n{clean_transcript}")
     
     final_transcript = clean_transcript
