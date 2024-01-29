@@ -33,7 +33,6 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # General Related
-DELETE_S3_OBJ = os.environ.get('DELETE_S3_OBJ', 'False').lower() == 'true'
 CLEAN_AUDIO = os.environ.get('CLEAN_AUDIO', 'False').lower() == 'true'
 AUDIO_CLEANING_LAMBDA_NAME = os.environ.get('AUDIO_CLEANING_LAMBDA_NAME')
 
@@ -113,11 +112,11 @@ def start_processing(bucket_name, final_object_key, audiofile_s3obj, audiofile_d
     if final_transcript.lower() not in {'', '.', 'null'}:
         vector_id = vectorupsert(final_transcript, audiofile_metadata)
     
-def delete_or_not_audio_file(bucket_name, final_object_key):
+def delete_or_not_audio_file(bucket_name, final_object_key, audiofile_metadata):
     logger.info(f'Deleting audio file...')
 
     # If required delete the S3 object after processing is complete
-    if DELETE_S3_OBJ:
+    if audiofile_metadata["saveAudioFiles"] != "false":
         s3.delete_object(Bucket=bucket_name, Key=final_object_key)
         logger.info(f"Deleted S3 object: {bucket_name}/{final_object_key}")
 
@@ -309,7 +308,7 @@ def handler(event, context):
         bucket_name, initial_object_key = pulling_s3_object_details(event)
         audiofile_s3obj, final_object_key, audiofile_download_path, audiofile_metadata = downloading_s3_objects(event, bucket_name, initial_object_key)
         start_processing(bucket_name, final_object_key, audiofile_s3obj, audiofile_download_path, audiofile_metadata)
-        delete_or_not_audio_file(bucket_name, final_object_key)
+        delete_or_not_audio_file(bucket_name, final_object_key, audiofile_metadata)
 
         return {
             'statusCode': 200,
