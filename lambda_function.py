@@ -175,7 +175,7 @@ def update_metadata_type(metadata, text):
         document['minutes'] = int(metadata['minutes'])
 
     if 'address' in metadata:
-        document['address'] = str(metadata['address'])
+        document['address'] = urllib.parse.unquote(str(metadata['address']), encoding='utf-8')
 
     if 'batterylevel' in metadata:
         document['batterylevel'] = int(metadata['batterylevel'])
