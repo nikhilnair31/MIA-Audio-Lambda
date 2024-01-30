@@ -104,10 +104,13 @@ def start_processing(bucket_name, final_object_key, audiofile_s3obj, audiofile_d
         raw_transcript = 'null' if not (result) or result.strip() in ('', '.', 'null') else result
     
     final_llm_input = f"{raw_transcript}\n{CLEAN_SYSTEM_PROMPT}"
-    logger.info(f'final_llm_input\n{final_llm_input}')
+    # logger.info(f'final_llm_input\n{final_llm_input}')
     
     clean_transcript = together(CLEAN_MODEL, None, final_llm_input)
+    # logger.info(f'clean_transcript\n{clean_transcript}')
+
     # speaker_label_transcript = together(CLEAN_MODEL, null, f"{SPEAKER_LABEL_SYSTEM_PROMPT}\n{clean_transcript}")
+    # logger.info(f'speaker_label_transcript\n{speaker_label_transcript}')
     
     final_transcript = clean_transcript.lower()
     if final_transcript not in {'', '.', 'null'}:
@@ -116,7 +119,7 @@ def start_processing(bucket_name, final_object_key, audiofile_s3obj, audiofile_d
 def delete_or_not_audio_file(bucket_name, final_object_key, audiofile_metadata):
     logger.info(f'Deletion...')
 
-    # If required delete the S3 object after processing is complete
+    # If user requested deletion of the S3 object
     if audiofile_metadata["saveaudiofiles"] == "false":
         s3.delete_object(Bucket=bucket_name, Key=final_object_key)
         logger.info(f"Deleted S3 object: {bucket_name}/{final_object_key}")
@@ -131,7 +134,7 @@ def clean_or_not_final_audio_path(event, bucket_name, initial_object_key, audiof
     if audiofile_metadata["cleanaudio"] == "true":
         logger.info(f"Cleaning audio file...")
 
-        # Make a copy of event and add parameters from app 
+        # Make a copy of event and add audio cleaning parameters from app 
         updated_event = event
         updated_event['filtermusic'] = audiofile_metadata["filtermusic"]
         updated_event['normalizeloudness'] = audiofile_metadata["normalizeloudness"]
@@ -154,7 +157,7 @@ def clean_or_not_final_audio_path(event, bucket_name, initial_object_key, audiof
         return cleaned_audiofile_object_key
 
     logger.info(f"NOT cleaning audio file...")
-    return f'{bucket_name}/{initial_object_key}'
+    return initial_object_key
 
 def update_metadata_type(metadata, text):
     document = metadata
