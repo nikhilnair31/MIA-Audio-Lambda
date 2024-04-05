@@ -112,7 +112,7 @@ def start_processing(bucket_name, final_object_key, audiofile_s3obj, audiofile_d
     # speaker_label_transcript = together(CLEAN_MODEL, null, f"{SPEAKER_LABEL_SYSTEM_PROMPT}\n{clean_transcript}")
     # logger.info(f'speaker_label_transcript\n{speaker_label_transcript}')
     
-    final_transcript = clean_transcript.lower()
+    final_transcript = clean_transcript.lower().strip()
     if final_transcript not in {'', '.', 'null'}:
         vector_id = vectorupsert(final_transcript, audiofile_metadata)
     

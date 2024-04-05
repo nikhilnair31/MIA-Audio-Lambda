@@ -1,5 +1,6 @@
 import os
 import pinecone
+import numpy as np
 from langchain.embeddings import OpenAIEmbeddings
 from dotenv import load_dotenv
 
@@ -17,7 +18,7 @@ pinecone.init(api_key=pinecone_api_key, environment=pinecone_env_key)
 index = pinecone.Index(pinecone_index_name)
 
 # Embedding text
-text_to_embed = "I'm sorry, but I need the transcript you want me to correct in order to process it. Please provide the transcript you want me to work on."
+text_to_embed = " null"
 embedding = embeddings_model.embed_query(text_to_embed)
 print(f'embedding\n{len(embedding)}')
 
